@@ -1,0 +1,1142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>HPACK in Erlang</title>
+<meta name="author" content="(Joe DeVivo)"/>
+
+<link rel="stylesheet" href="./css/reveal.css"/>
+<link rel="stylesheet" href="./css/theme/black.css" id="theme"/>
+
+<!-- If the query includes 'print-pdf', include the PDF print sheet -->
+<script>
+    if( window.location.search.match( /print-pdf/gi ) ) {
+        var link = document.createElement( 'link' );
+        link.rel = 'stylesheet';
+        link.type = 'text/css';
+        link.href = './css/print/pdf.css';
+        document.getElementsByTagName( 'head' )[0].appendChild( link );
+    }
+</script>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<section>
+<section id="slide-sec-1">
+<h2 id="sec-1">HPACK in Erlang</h2>
+<h3>HTTP/2 Header Encoding</h3>
+<p><small>Joe DeVivo / <a href="http://twitter.com/joedevivo">@joedevivo</a></small></p>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-2">
+<h2 id="sec-2">HTTP/2</h2>
+<aside class="notes">
+<p>
+It's the future, get on it!
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-3">
+<h2 id="sec-3">HTTP/1*</h2>
+<aside class="notes">
+<p>
+J/K, he's still here
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-4">
+<h2 id="sec-4">Semantically Identical</h2>
+<aside class="notes">
+<p>
+You get Request and Response messages, and they have headers!
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-5">
+<h2 id="sec-5">What's Different Then?</h2>
+<aside class="notes">
+<p>
+Lots
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-6">
+<h2 id="sec-6">HTTP/2 in 90 Seconds!</h2>
+<div class="outline-text-2" id="text-6">
+</div></section>
+<section id="slide-sec-6-1">
+<h3 id="sec-6-1">HTTP/2 Connection</h3>
+<aside class="notes">
+<p>
+There's only one
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-6-2">
+<h3 id="sec-6-2">How?</h3>
+
+</section>
+<section id="slide-sec-6-3">
+<h3 id="sec-6-3">Multiplexed Streams</h3>
+<aside class="notes">
+<p>
+Takes the place of multiple connections or <b>gulp</b> pipelining
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-6-4">
+<h3 id="sec-6-4">It's Binary!</h3>
+<aside class="notes">
+<p>
+Unlike all plaintext HTTP before it
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-6-5">
+<h3 id="sec-6-5">Frames</h3>
+<pre  class="fragment (appear)">
++-----------------------------------------------+
+|                 Length (24)                   |
++---------------+---------------+---------------+
+|   Type (8)    |   Flags (8)   |
++-+-------------+---------------+-------------------------------+
+|R|                 Stream Identifier (31)                      |
++=+=============================================================+
+|                   Frame Payload (0...)                      ...
++---------------------------------------------------------------+
+</pre>
+
+<aside class="notes">
+<p>
+Frames are binary chunks with a 9 octet header.
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-6-6">
+<h3 id="sec-6-6">Frames</h3>
+<p>
+What you need to know!
+</p>
+<ul>
+<li>There's a maximum length</li>
+<li>Flags signal if more are coming</li>
+
+</ul>
+<aside class="notes">
+<p>
+They do other stuff too, but that's not important now
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-6-7">
+<h3 id="sec-6-7">Type (8)</h3>
+<h4>10 Types</h4>
+<ul>
+<li>HEADERS</li>
+<li>CONTINUATION</li>
+
+</ul>
+<br/>
+<ul>
+<li class="fragment appear">PUSH_PROMISE</li>
+
+</ul>
+<aside class="notes">
+<p>
+We're only talking about three today
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-6-8">
+<h3 id="sec-6-8">PUSH_PROMISE?!</h3>
+<aside class="notes">
+<p>
+Push promises let us send multiple responses to a single request. Cool eh?
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-7">
+<h2 id="sec-7">Phew!</h2>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-8">
+<h2 id="sec-8">HPACK - <a href="http://tools.ietf.org/html/rfc7541">RFC-7541</a></h2>
+<p>
+A whole spec just for header compression
+</p>
+
+</section>
+<section id="slide-sec-8-1">
+<h3 id="sec-8-1">What's HPACK About?</h3>
+<aside class="notes">
+<p>
+HPACK is cheap. It wants to put as little on the wire as possible
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-9">
+<h2 id="sec-9">Where HPACK fits in HTTP/2</h2>
+<div class="outline-text-2" id="text-9">
+</div></section>
+<section id="slide-sec-9-1">
+<h3 id="sec-9-1">HEADERS</h3>
+<pre  class="example">
+     Name          Value
++------------+---------------+
+|   :path    |       /       |
++------------+---------------+
+| user-agent |      IE6      |
++------------+---------------+
+|  :method   |     POST      |
++------------+---------------+
+|   accept   |  text/plain   |
++------------+---------------+
+|   cookie   |      ...      |
++------------+---------------+
+</pre>
+<aside class="notes">
+<p>
+Remember headers? talk about psuedo headers here
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-9-2">
+<h3 id="sec-9-2">HPACK Shrinks That</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>(<span style="color: #eab700;">Headers</span>, <span style="color: #eab700;">Context</span>).
+</pre>
+</div>
+<pre  class="example">
++--------------------------+
+|                          |
+|   Encoded Header Block   |
+|                          |
++--------------------------+
+</pre>
+<aside class="notes">
+<p>
+This is smaller than plaintext
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-9-3">
+<h3 id="sec-9-3">Maybe too big?</h3>
+<aside class="notes">
+<p>
+Remember frame size? This block might be bigger than that
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-9-4">
+<h3 id="sec-9-4">Break it up!</h3>
+<pre  class="example">
++--------+ +--------+ +--------+
+|Fragment| |Fragment| |Fragment|
+|   #1   | |   #2   | |   #3   |
+|        | |        | |        |
++--------+ +--------+ +--------+
+</pre>
+
+</section>
+<section id="slide-sec-9-5">
+<h3 id="sec-9-5">They've been Framed!</h3>
+<pre  class="example">
++------------+   +------------+   +------------+
+|  HEADERS   |   |CONTINUATION|   |CONTINUATION|
++------------+   +------------+   +------------+
+|    NONE    |   |    NONE    |   |END_HEADERS |
++------------+   +------------+   +------------+
+|Fragment #1 |   |Fragment #2 |   |Fragment #3 |
+|            |   |            |   |            |
++------------+   +------------+   +------------+
+</pre>
+
+</section>
+<section id="slide-sec-9-6">
+<h3 id="sec-9-6">Send them over the wire</h3>
+
+</section>
+<section id="slide-sec-9-7">
+<h3 id="sec-9-7">Reconstruct the Encoded Header Block</h3>
+
+</section>
+<section id="slide-sec-9-8">
+<h3 id="sec-9-8">HPACK Decode</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">decode</span>(<span style="color: #eab700;">BinaryHeaderBlock</span>, <span style="color: #eab700;">Context</span>).
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-9-9">
+<h3 id="sec-9-9">It's a header list again!</h3>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-10">
+<h2 id="sec-10">How it does it</h2>
+<div class="outline-text-2" id="text-10">
+</div></section>
+<section id="slide-sec-10-1">
+<h3 id="sec-10-1">Header Compression</h3>
+<p>
+HTTP is stateless
+</p>
+<span class="fragment (appear)"><p>
+Stateless protocols are repetitive
+</p></span>
+<span class="fragment (appear)"><p>
+Stateless protocols are repetitive
+</p></span>
+
+</section>
+<section id="slide-sec-10-2">
+<h3 id="sec-10-2">Compression Context is Stateful</h3>
+<aside class="notes">
+<p>
+It's stateful at the connection level, but each request is still stateless
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-10-3">
+<h3 id="sec-10-3">What is a Compression Context?</h3>
+<aside class="notes">
+<p>
+Lookup table for common and recently used headers
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-11">
+<h2 id="sec-11">The Static Table</h2>
+<pre  class="example">
++-------+--------------------+---------------+
+| Index | Header Name        | Header Value  |
++-------+--------------------+---------------+
+| 1     | :authority         |               |
+| 2     | :method            | GET           |
+| 3     | :method            | POST          |
+| 4     | :path              | /             |
+| 5     | :path              | /index.html   |
+| 6     | :scheme            | http          |
+| 7     | :scheme            | https         |
+| 8     | :status            | 200           |
+| 13    | :status            | 404           |
+| 14    | :status            | 500           |
+| 15    | accept-charset     |               |
+| 16    | accept-encoding    | gzip, deflate |
+	            ...
+| 57    | transfer-encoding  |               |
+| 58    | user-agent         |               |
+| 59    | vary               |               |
+| 60    | via                |               |
+| 61    | www-authenticate   |               |
++-------+--------------------+---------------+
+</pre>
+
+</section>
+<section id="slide-sec-11-1">
+<h3 id="sec-11-1"><a href="https://github.com/joedevivo/chatterbox/blob/euc2015/src/headers.erl#L62-L123">hpack_index.erl</a></h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">[{1  , &lt;&lt;<span style="color: #3e999f;">":authority"</span>&gt;&gt;       , undefined},
+ {2  , &lt;&lt;<span style="color: #3e999f;">":method"</span>&gt;&gt;          , &lt;&lt;<span style="color: #3e999f;">"GET"</span>&gt;&gt;},
+ {3  , &lt;&lt;<span style="color: #3e999f;">":method"</span>&gt;&gt;          , &lt;&lt;<span style="color: #3e999f;">"POST"</span>&gt;&gt;},
+ {4  , &lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;            , &lt;&lt;<span style="color: #3e999f;">"/"</span>&gt;&gt;},
+ {5  , &lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;            , &lt;&lt;<span style="color: #3e999f;">"/index.html"</span>&gt;&gt;},
+ {6  , &lt;&lt;<span style="color: #3e999f;">":scheme"</span>&gt;&gt;          , &lt;&lt;<span style="color: #3e999f;">"http"</span>&gt;&gt;},
+ {7  , &lt;&lt;<span style="color: #3e999f;">":scheme"</span>&gt;&gt;          , &lt;&lt;<span style="color: #3e999f;">"https"</span>&gt;&gt;},
+ {8  , &lt;&lt;<span style="color: #3e999f;">":status"</span>&gt;&gt;          , &lt;&lt;<span style="color: #3e999f;">"200"</span>&gt;&gt;},
+ {13 , &lt;&lt;<span style="color: #3e999f;">":status"</span>&gt;&gt;          , &lt;&lt;<span style="color: #3e999f;">"404"</span>&gt;&gt;},
+ {14 , &lt;&lt;<span style="color: #3e999f;">":status"</span>&gt;&gt;          , &lt;&lt;<span style="color: #3e999f;">"500"</span>&gt;&gt;},
+ {15 , &lt;&lt;<span style="color: #3e999f;">"accept-charset"</span>&gt;&gt;   , undefined},
+ {16 , &lt;&lt;<span style="color: #3e999f;">"accept-encoding"</span>&gt;&gt;  , &lt;&lt;<span style="color: #3e999f;">"gzip, deflate"</span>&gt;&gt;},
+              ...
+ {57 , &lt;&lt;<span style="color: #3e999f;">"transfer-encoding"</span>&gt;&gt;, undefined},
+ {58 , &lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;       , undefined},
+ {59 , &lt;&lt;<span style="color: #3e999f;">"vary"</span>&gt;&gt;             , undefined},
+ {60 , &lt;&lt;<span style="color: #3e999f;">"via"</span>&gt;&gt;              , undefined},
+ {61 , &lt;&lt;<span style="color: #3e999f;">"www-authenticate"</span>&gt;&gt; , undefined}]
+</pre>
+</div>
+
+<aside class="notes">
+<p>
+These are for really common headers. e.g. A response code of 200 is
+just going to be represented by "8".  Sometimes there's no value, but
+the header name is what we're saving here, so 15+value is always
+"accept-charset", Indexes 1-61, Sometimes value, sometimes
+not. They're all hardcoded and are constant.
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-12">
+<h2 id="sec-12">Initial Context</h2>
+<h2>IS</h2>
+<h2>the Static Table</h2>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-13">
+<h2 id="sec-13">The Dynamic Table</h2>
+<p>
+Add your own!
+Indexes 62+
+Bounded by size in the HTTP/2 Connection Settings
+</p>
+
+<aside class="notes">
+<p>
+Take a bite out of CRIME
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-13-1">
+<h3 id="sec-13-1">Dynamic Table Source</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #8959a8;">-type</span> <span style="color: #4271ae;">header_name</span>() :: <span style="color: #8959a8;">binary</span>().
+<span style="color: #8959a8;">-type</span> <span style="color: #4271ae;">header_value</span>():: <span style="color: #8959a8;">binary</span>().
+<span style="color: #8959a8;">-define</span>(<span style="color: #eab700;">DYNAMIC_TABLE_MIN_INDEX</span>, 62).
+
+<span style="color: #8959a8;">-record</span>(<span style="color: #4271ae;">dynamic_table</span>, {
+    table = [] :: [{<span style="color: #8959a8;">pos_integer</span>(), <span style="color: #4271ae;">header_name</span>(), <span style="color: #4271ae;">header_value</span>()}],
+    max_size = 4096 :: <span style="color: #8959a8;">pos_integer</span>(),
+    size = 0 :: <span style="color: #8959a8;">non_neg_integer</span>()
+}).
+<span style="color: #8959a8;">-type</span> <span style="color: #4271ae;">dynamic_table</span>() :: #<span style="color: #4271ae;">dynamic_table</span>{}.
+</pre>
+</div>
+
+<aside class="notes">
+<p>
+Initial context has a dynamic table, it's just empty
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-13-2">
+<h3 id="sec-13-2">hpack API</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #8959a8;">-spec</span> <span style="color: #4271ae;">encode</span>([{<span style="color: #8959a8;">binary</span>(), <span style="color: #8959a8;">binary</span>()}], <span style="color: #4271ae;">encode_context</span>()) -&gt;
+                                 {<span style="color: #8959a8;">binary</span>(), <span style="color: #4271ae;">encode_context</span>()}.
+<span style="color: #8959a8;">-spec</span> <span style="color: #4271ae;">decode</span>(<span style="color: #8959a8;">binary</span>(), <span style="color: #4271ae;">decode_context</span>()) -&gt;
+                                 {<span style="color: #4271ae;">headers</span>(), <span style="color: #4271ae;">decode_context</span>()}.
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-13-3">
+<h3 id="sec-13-3">Identity Property</h3>
+<p>
+Encoding a header that has already been encoded, does not change the context
+</p>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">StaticTable = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">new_encode_context</span>(),
+{<span style="color: #eab700;">HeaderBin</span>, <span style="color: #eab700;">StaticTable</span>} =
+    <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>([{&lt;&lt;<span style="color: #3e999f;">":status"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"200"</span>&gt;&gt;}], <span style="color: #eab700;">StaticTable</span>).
+
+<span style="color: #eab700;">StaticTable</span> = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">new_decode_context</span>(),
+{[{&lt;&lt;<span style="color: #3e999f;">":status"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"200"</span>&gt;&gt;}], <span style="color: #eab700;">StaticTable</span>} =
+    <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">decode</span>(<span style="color: #eab700;">HeaderBin</span>, <span style="color: #eab700;">StaticTable</span>).
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-13-4">
+<h3 id="sec-13-4">Context Modifying Operation</h3>
+<p>
+Encoding something new, changes the dynamic table
+</p>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">StaticTable = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">new_encode_context</span>(),
+{<span style="color: #eab700;">HeaderBin</span>, <span style="color: #eab700;">NewContext</span>} =
+    <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>([{&lt;&lt;<span style="color: #3e999f;">":status"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"600"</span>&gt;&gt;}], <span style="color: #eab700;">StaticTable</span>),
+<span style="color: #eab700;">NewContext</span> =/= <span style="color: #eab700;">StaticTable</span>,
+<span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">Second time we try and encode this header</span>
+{<span style="color: #eab700;">HeaderBin</span>, <span style="color: #eab700;">NewContext</span>} =
+    <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>([{&lt;&lt;<span style="color: #3e999f;">":status"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"600"</span>&gt;&gt;}], <span style="color: #eab700;">NewContext</span>).
+</pre>
+</div>
+<aside class="notes">
+<p>
+notice the pattern match on the last line
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-14">
+<h2 id="sec-14">Where do they live?</h2>
+<div class="outline-text-2" id="text-14">
+</div></section>
+<section id="slide-sec-14-1">
+<h3 id="sec-14-1">There Are Four Contexts!</h3>
+<p>
+Given two peers: X &amp; Y, connected over C
+</p>
+<ul>
+<li>Context A1: encoding outbound requests on X to Y over C</li>
+<li>Context A2: decoding inbound requests on Y from X over C</li>
+<li>Context B1: encoding outbound responses on Y to X over C</li>
+<li>Context B2: decoding inbound responses on X from Y over C</li>
+
+</ul>
+
+<aside class="notes">
+<p>
+Two for each peer, Maybe easier to think of as one for Requests and
+one for Responses. If you open multiple connections, there will be 4
+contexts per connection, but you wouldn't do that because you can
+multiplex :D
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-14-2">
+<h3 id="sec-14-2">The Basic Case</h3>
+<pre  class="example">
+                    +---------------+           +---------------+
+                    |Peer X (Client)|           |Peer Y (Server)|
++-------------------+---------------+           +---------------+-------------------+
+|                                   |           |                                   |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+| |Plain Req |   |Encode (A1)|   | Encoded Request |   |Decode (A2)|   |Plain Req | |
+| | Headers  |--&gt;|  Context  |--&gt;|     Headers     |--&gt;|  Context  |--&gt;| Headers  | |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+|                                   |   Cloud   |                                   |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+| |Plain Resp|   |Decode (B2)|   |Encoded Response |   |Encode (B1)|   |Plain Resp| |
+| | Headers  |&lt;--|  Context  |&lt;--|     Headers     |&lt;--+- Context  |&lt;--| Headers  | |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+|                                   |           |                                   |
+|                                   |           |                                   |
++-----------------------------------+           +-----------------------------------+
+</pre>
+
+</section>
+<section id="slide-sec-14-3">
+<h3 id="sec-14-3">A More Interesting Case</h3>
+<pre  class="example">
+                   +---------------+           +---------------+
+                    |Peer X (Client)|           |Peer Y (Server)|
++-------------------+---------------+           +---------------+-------------------+
+|                                   |           |                                   |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #1|--&gt;|           |--&gt;|   Headers #1    |--&gt;|           |--&gt;|Headers #1| |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #2|--&gt;|           |--&gt;|   Headers #2    |--&gt;|           |--&gt;|Headers #2| |
+| +----------+   |Encode (A1)|   +--+-----------+--+   |Decode (A2)|   +----------+ |
+| +----------+   |  Context  |   +--+-----------+--+   |  Context  |   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #3|--&gt;|           |--&gt;|   Headers #3    |--&gt;|           |--&gt;|Headers #3| |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #4|--&gt;|           |--&gt;|   Headers #4    |--&gt;|           |--&gt;|Headers #4| |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
++-----------------------------------+           +-----------------------------------+
+</pre>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-15">
+<h2 id="sec-15">How HPACK Packs</h2>
+<div class="outline-text-2" id="text-15">
+</div></section>
+<section id="slide-sec-15-1">
+<h3 id="sec-15-1">Data Types</h3>
+<ul>
+<li>Numbers</li>
+<li>Strings</li>
+
+</ul>
+
+</section>
+<section id="slide-sec-15-2">
+<h3 id="sec-15-2">Indexed Header Field</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 1 |        Index (7+)         |
++---+---------------------------+
+</pre>
+<aside class="notes">
+<p>
+This is the easiest one! It says that everything you need is in the context, at the specified index
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-3">
+<h3 id="sec-15-3">7+?</h3>
+<ul>
+<li>Indexes can be greater than 2^7-1 (127)</li>
+<li>Sometimes HPACK has as few as 5 bits to use.</li>
+
+</ul>
+
+</section>
+<section id="slide-sec-15-4">
+<h3 id="sec-15-4">Integer Representation (N=5)</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| ? | ? | ? | 1   1   1   1   1 |
++---+---+---+-------------------+
+| 1 |    Value-(2^N-1) LSB      |
++---+---------------------------+
+               ...
++---+---------------------------+
+| 0 |    Value-(2^N-1) MSB      |
++---+---------------------------+
+</pre>
+<aside class="notes">
+nil
+</aside>
+
+</section>
+<section id="slide-sec-15-5">
+<h3 id="sec-15-5">1337, N=5</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 1306
+| 1 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |  1306&gt;=128, encode(154), I=1306/128
+| 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |  10&lt;128, encode(10), done
++---+---+---+---+---+---+---+---+
+</pre>
+<aside class="notes">
+<p>
+Since we're sending something bigger than 31, we need to use more bytes, but
+let's not waste those 5 bits, take the number we're encoding, and subtract 31
+since we already sent it. Then we can only send 7 bits per byte to honor the
+continuation bit. so send the 7 least significant bits, shift right, repeat.
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-6">
+<h3 id="sec-15-6">hpack_integer</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">Prefix</span>) <span style="color: #718c00;">when</span> <span style="color: #eab700;">Int</span> &lt; (1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">Prefix</span> - 1) -&gt;
+    &lt;&lt;<span style="color: #eab700;">Int</span>:<span style="color: #eab700;">Prefix</span>&gt;&gt;;
+<span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">Prefix</span>) -&gt;
+    <span style="color: #eab700;">PrefixMask</span> = 1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">Prefix</span> - 1,
+    <span style="color: #eab700;">Remaining</span> = <span style="color: #eab700;">Int</span> - <span style="color: #eab700;">PrefixMask</span>,
+    <span style="color: #eab700;">Bin</span> = <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">Remaining</span>, &lt;&lt;&gt;&gt;),
+    &lt;&lt;<span style="color: #eab700;">PrefixMask</span>:<span style="color: #eab700;">Prefix</span>, <span style="color: #eab700;">Bin</span>/binary&gt;&gt;.
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-15-7">
+<h3 id="sec-15-7">hpack_integer (cont)</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #8959a8;">-spec</span> <span style="color: #4271ae;">encode_</span>(<span style="color: #8959a8;">non_neg_integer</span>(), <span style="color: #8959a8;">binary</span>()) -&gt;<span style="color: #f5871f;"> </span><span style="color: #8959a8;">binary</span>().
+<span style="color: #f5871f;">encode_</span>(0, <span style="color: #eab700;">BinAcc</span>) -&gt;
+    <span style="color: #eab700;">BinAcc</span>;
+<span style="color: #f5871f;">encode_</span>(<span style="color: #eab700;">I</span>, <span style="color: #eab700;">BinAcc</span>) -&gt;
+    <span style="color: #eab700;">Rem</span> = <span style="color: #eab700;">I</span> <span style="color: #8959a8;">bsr</span> 7,
+    <span style="color: #eab700;">This</span> = (<span style="color: #eab700;">I</span> <span style="color: #8959a8;">rem</span> 128),
+    <span style="color: #eab700;">ThisByte</span> = <span style="color: #718c00;">case</span> <span style="color: #eab700;">Rem</span> =:= 0 <span style="color: #718c00;">of</span>
+        true -&gt;
+            <span style="color: #eab700;">This</span>;
+        <span style="color: #eab700;">_</span> -&gt;<span style="color: #f5871f;"> </span><span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">Adds the continuation bit</span>
+            128 + <span style="color: #eab700;">This</span>
+    <span style="color: #718c00;">end</span>,
+    <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">Rem</span>, &lt;&lt;<span style="color: #eab700;">BinAcc</span>/binary, <span style="color: #eab700;">ThisByte</span>&gt;&gt;).
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-15-8">
+<h3 id="sec-15-8">Livin' on the edge: 31, N=5</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 0
+| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  0&lt;128, encode(0), done
++---+---+---+---+---+---+---+---+
+</pre>
+<aside class="notes">
+<p>
+In this one case, where the number you're encoding is 2<sup>N</sup>-1, you have to send a
+0 byte otherwise HPACK will start interpreting what follows as more integer.
+</p>
+
+<p>
+I only found this because Wireshark
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-9">
+<h3 id="sec-15-9">Literal Header Field w/ Index</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 0 | 1 |      Index (6+)       |
++---+---+-----------------------+
+| H |     Value Length (7+)     |
++---+---------------------------+
+| Value String (Length octets)  |
++-------------------------------+
+</pre>
+<aside class="notes">
+<p>
+A Name that's already in the table, but a different value. Two integers to
+encode! One with N=6 and one with N=7. H bit. Value. Straight ascii or huffman
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-10">
+<h3 id="sec-15-10">Huffman Code</h3>
+<ul>
+<li>uses less than 8 bits per char (sometimes)</li>
+<li>the more common the char, the fewer bits</li>
+
+</ul>
+
+</section>
+<section id="slide-sec-15-11">
+<h3 id="sec-15-11">Huffman examples</h3>
+<pre  class="example">
+                                                     code
+                       code as bits                 as hex   len
+     sym              aligned to MSB                aligned   in
+                                                    to LSB   bits
+' ' ( 32)  |010100                                       14  [ 6]
+'!' ( 33)  |11111110|00                                 3f8  [10]
+'"' ( 34)  |11111110|01                                 3f9  [10]
+'#' ( 35)  |11111111|1010                               ffa  [12]
+'$' ( 36)  |11111111|11001                             1ff9  [13]
+'0' ( 48)  |00000                                         0  [ 5]
+'1' ( 49)  |00001                                         1  [ 5]
+'2' ( 50)  |00010                                         2  [ 5]
+'r' (114)  |101100                                       2c  [ 6]
+'s' (115)  |01000                                         8  [ 5]
+'t' (116)  |01001                                         9  [ 5]
+    (253)  |11111111|11111111|11111101|111          7ffffef  [27]
+    (254)  |11111111|11111111|11111110|000          7fffff0  [27]
+    (255)  |11111111|11111111|11111011|10           3ffffee  [26]
+</pre>
+<aside class="notes">
+<p>
+Non-displayable chars are big! but they're rare. letters and numbers are short.
+Created from statistical analysis of web traffic
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-12">
+<h3 id="sec-15-12">Literal Header Field non-Indexed</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 0 | 1 |           0           |
++---+---+-----------------------+
+| H |     Name Length (7+)      |
++---+---------------------------+
+|  Name String (Length octets)  |
++---+---------------------------+
+| H |     Value Length (7+)     |
++---+---------------------------+
+| Value String (Length octets)  |
++-------------------------------+
+</pre>
+
+</section>
+<section id="slide-sec-15-13">
+<h3 id="sec-15-13">Types of Literal Fields</h3>
+<ul>
+<li>with Indexing - added to the dynamic table</li>
+<li>without Indexing - not added to the DT</li>
+<li>never Indexed - never added to any DT</li>
+
+</ul>
+<aside class="notes">
+<p>
+All three are ways of saying the same thing, as far as "here's a header and
+value, but some are not compressed. "never" means no proxies can compress it
+either, while "without" applies to just one hop.
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-14">
+<h3 id="sec-15-14">Binary Pattern Matching!</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #f5871f;">decode</span>(&lt;&lt;&gt;&gt;, <span style="color: #eab700;">HeadersAcc</span>, <span style="color: #eab700;">C</span>) -&gt;<span style="color: #f5871f;"> </span>{<span style="color: #eab700;">HeadersAcc</span>, <span style="color: #eab700;">C</span>};
+<span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">First bit is '1', so it's an 'Indexed Header Feild'</span>
+<span style="color: #f5871f;">decode</span>(&lt;&lt;2#1:1,<span style="color: #eab700;">_</span>/bits&gt;&gt;=<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>) -&gt;
+    <span style="color: #4271ae;">decode_indexed_header</span>(<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>);
+<span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">First two bits are '01' so it's a 'Literal Header Field with Incremental Indexing'</span>
+<span style="color: #f5871f;">decode</span>(&lt;&lt;2#01:2,<span style="color: #eab700;">_</span>/bits&gt;&gt;=<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>) -&gt;
+    <span style="color: #4271ae;">decode_literal_header_with_indexing</span>(<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>);
+<span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">First four bits are '0000' so it's a 'Literal Header Field without Indexing'</span>
+<span style="color: #f5871f;">decode</span>(&lt;&lt;2#0000:4,<span style="color: #eab700;">_</span>/bits&gt;&gt;=<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>) -&gt;
+    <span style="color: #4271ae;">decode_literal_header_without_indexing</span>(<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>);
+<span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">First four bits are '0001' so it's a 'Literal Header Field never Indexed'</span>
+<span style="color: #f5871f;">decode</span>(&lt;&lt;2#0001:4,<span style="color: #eab700;">_</span>/bits&gt;&gt;=<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>) -&gt;
+    <span style="color: #4271ae;">decode_literal_header_never_indexed</span>(<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>);
+<span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">First three bits are '001' so it's a 'Dynamic Table Size Update'</span>
+<span style="color: #f5871f;">decode</span>(&lt;&lt;2#001:3,<span style="color: #eab700;">_</span>/bits&gt;&gt;=<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>) -&gt;
+    <span style="color: #4271ae;">decode_dynamic_table_size_update</span>(<span style="color: #eab700;">B</span>, <span style="color: #eab700;">HeaderAcc</span>, <span style="color: #eab700;">Context</span>);
+</pre>
+</div>
+<aside class="notes">
+<p>
+Pattern Matching makes this easy! Each of those sub clauses passes along to
+something that knows how to read those bytes
+</p>
+
+</aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-16">
+<h2 id="sec-16">HPACK Tables Example</h2>
+<div class="outline-text-2" id="text-16">
+</div></section>
+<section id="slide-sec-16-1">
+<h3 id="sec-16-1">Three Requests</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">Headers1 = [
+           {&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"/"</span>&gt;&gt;},
+           {&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;},
+           {&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"some custom value"</span>&gt;&gt;}
+          ],
+<span style="color: #eab700;">HeaderContext1</span> = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">new_encode_context</span>(),
+{<span style="color: #eab700;">HeadersBin1</span>, <span style="color: #eab700;">HeaderContext2</span>} = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>(<span style="color: #eab700;">Headers1</span>, <span style="color: #eab700;">HeaderContext1</span>),
+
+<span style="color: #eab700;">Headers2</span> = [
+           {&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"/some_file.html"</span>&gt;&gt;},
+           {&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;},
+           {&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"some custom value"</span>&gt;&gt;}
+          ],
+{<span style="color: #eab700;">HeadersBin2</span>, <span style="color: #eab700;">HeaderContext3</span>} = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>(<span style="color: #eab700;">Headers2</span>, <span style="color: #eab700;">HeaderContext2</span>),
+
+<span style="color: #eab700;">Headers3</span> = [
+           {&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"/some_file.html"</span>&gt;&gt;},
+           {&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;},
+           {&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"new value"</span>&gt;&gt;}
+          ],
+{<span style="color: #eab700;">HeadersBin3</span>, <span style="color: #eab700;">_HeaderContext4</span>} = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>(<span style="color: #eab700;">Headers3</span>, <span style="color: #eab700;">HeaderContext3</span>),
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-16-2">
+<h3 id="sec-16-2">Request #1</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">Headers1 = [
+   {&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"/"</span>&gt;&gt;},
+   {&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;},
+   {&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"some custom value"</span>&gt;&gt;}
+],
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-16-3">
+<h3 id="sec-16-3">Wiresharked R1</h3>
+<pre  class="example">
+Header: :path: /
+    Representation: Indexed Header Field
+</pre>
+<pre>    Index: <b>4</b></pre>
+<pre  class="example">
+Header: user-agent: my cool browser
+    Representation: Literal Header Field with Incremental Indexing - Indexed Name
+</pre>
+<pre>    Index: <b>58</b></pre>
+<pre>    Value: <b>my cool browser</b></pre>
+<pre  class="example">
+Header: x-custom-header: some custom value
+    Representation: Literal Header Field with Incremental Indexing - New Name
+</pre>
+<pre>    Name: <b>x-custom-header</b></pre>
+<pre>    Value: <b>some custom value</b></pre>
+<aside class="notes">
+<p>
+Look at the first and second headers' index, and the third has none
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-16-4">
+<h3 id="sec-16-4">R1 Context Updates</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">DynamicTable = [
+                {62,&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;,&lt;&lt;<span style="color: #3e999f;">"some custom value"</span>&gt;&gt;},
+                {63,&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;,     &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;}
+              ]
+</pre>
+</div>
+<ul>
+<li>:path changes nothing</li>
+<li>"user-agent"/"my cool browser" is now Index 62</li>
+<li>"x-custom-header"/"some custom value" is now Index 62</li>
+<li>"user-agent"/"my cool browser" is +1'd to 63</li>
+
+</ul>
+
+</section>
+<section id="slide-sec-16-5">
+<h3 id="sec-16-5">Request #2</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">Headers2 = [
+  {&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"/some_file.html"</span>&gt;&gt;},
+  {&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;},
+  {&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"some custom value"</span>&gt;&gt;}
+],
+</pre>
+</div>
+
+</section>
+<section id="slide-sec-16-6">
+<h3 id="sec-16-6">Wiresharked R2&lt;/h4&gt;</h3>
+<pre  class="example">
+Header: :path: /some_file.html
+    Representation: Literal Header Field with Incremental Indexing - Indexed Name
+</pre>
+<pre>    Index: <b>4</b></pre>
+<pre>    Value: <b>/some_file.html</b></pre>
+<pre  class="example">
+Header: user-agent: my cool browser
+    Representation: Indexed Header Field
+</pre>
+<pre>    Index: <b>64</b></pre>
+<pre  class="example">
+Header: x-custom-header: some custom value
+    Representation: Indexed Header Field
+</pre>
+<pre>    Index: <b>63</b></pre>
+<aside class="notes">
+<p>
+Look at those indexes? 64 &amp; 63? Didn't I just say 62 &amp; 63? Yes! It's because the
+encoding context is updated per header, not per request. Ordering!
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-16-7">
+<h3 id="sec-16-7">R2: Context updates</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">[
+  {62,&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;,          &lt;&lt;<span style="color: #3e999f;">"/some_file.html"</span>&gt;&gt;},
+  {63,&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;,&lt;&lt;<span style="color: #3e999f;">"some custom value"</span>&gt;&gt;},
+  {64,&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;,     &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;}
+]
+</pre>
+</div>
+<ul>
+<li>":path"/"/some_file.html" is the new Index 62</li>
+<li>"x-custom-header"/"some custom value" is +1'd 63</li>
+<li>"user-agent"/"my cool browser" is +1'd to 64</li>
+
+</ul>
+
+<aside class="notes">
+<p>
+FIFO queue. First in, First out. Falls of the end.
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-16-8">
+<h3 id="sec-16-8">Request #3</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">Headers3 = [
+  {&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"/some_file.html"</span>&gt;&gt;},
+  {&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;},
+  {&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;, &lt;&lt;<span style="color: #3e999f;">"new value"</span>&gt;&gt;}
+],
+</pre>
+</div>
+</section>
+<section id="slide-sec-16-9">
+<h3 id="sec-16-9">Wiresharked R3</h3>
+<pre  class="example">
+Header: :path: /some_file.html
+    Representation: Indexed Header Field
+</pre>
+<pre>    Index: <b>62</b></pre>
+<pre  class="example">
+Header: user-agent: my cool browser
+    Representation: Indexed Header Field
+</pre>
+<pre>    Index: <b>64</b></pre>
+<pre  class="example">
+Header: x-custom-header: new value
+    Representation: Literal Header Field with Incremental Indexing - Indexed Name
+</pre>
+<pre>    Index: <b>63</b></pre>
+<pre>    Value: <b>new value</b></pre>
+
+</section>
+<section id="slide-sec-16-10">
+<h3 id="sec-16-10">R3: Context updates</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">[
+  {62,&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;,&lt;&lt;<span style="color: #3e999f;">"new value"</span>&gt;&gt;},
+  {63,&lt;&lt;<span style="color: #3e999f;">":path"</span>&gt;&gt;,          &lt;&lt;<span style="color: #3e999f;">"/some_file.html"</span>&gt;&gt;},
+  {64,&lt;&lt;<span style="color: #3e999f;">"x-custom-header"</span>&gt;&gt;,&lt;&lt;<span style="color: #3e999f;">"some custom value"</span>&gt;&gt;},
+  {65,&lt;&lt;<span style="color: #3e999f;">"user-agent"</span>&gt;&gt;,     &lt;&lt;<span style="color: #3e999f;">"my cool browser"</span>&gt;&gt;}
+]
+</pre>
+</div>
+
+<ul>
+<li>"x-custom-header"/"new value" is the new 62&lt;/li&gt;</li>
+<li>":path"/"/some_file.html" is +1'd to 63&lt;/li&gt;</li>
+<li>"x-custom-header"/"some custom value" is +1'd 64&lt;/li&gt;</li>
+<li>"user-agent"/"my cool browser" is +1'd to 65&lt;/li&gt;</li>
+
+</ul>
+<aside class="notes">
+<p>
+when the sum of the sizes of name/value pairs exceedes the maximum table size,
+that last header falls off the end. bye!
+</p>
+
+</aside>
+</section>
+</section>
+</div>
+</div>
+
+<script src="./lib/js/head.min.js"></script>
+<script src="./js/reveal.js"></script>
+
+<script>
+// Full list of configuration options available here:
+// https://github.com/hakimel/reveal.js#configuration
+Reveal.initialize({
+
+controls: true,
+progress: true,
+history: true,
+center: true,
+slideNumber: true,
+rollingLinks: false,
+keyboard: true,
+overview: true,
+
+theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+transitionSpeed: 'default',
+multiplex: {
+    secret: '', // null if client
+    id: '', // id, obtained from socket.io server
+    url: '' // Location of socket.io server
+},
+
+// Optional libraries used to extend on reveal.js
+dependencies: [
+ { src: './plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+ { src: './plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+ { src: './plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+ { src: './plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+]
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Chatterbox HTTP/2 in Erlang</title>
+
+		<meta name="description" content="A presentation for LambdaJam Chicago 2015" />
+		<meta name="author" content="Joe DeVivo" />
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/black.css" id="theme">
+
+		<!-- Code syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				<section>
+					<h1>HPACK in Erlang</h1>
+					<h3>HTTP/2 Header Encoding</h3>
+					<p>
+						<small>Joe DeVivo / <a href="http://twitter.com/joedevivo">@joedevivo</a></small>
+					</p>
+				</section>
+
+				<section>
+					<h2>HTTP/2</h2>
+					<aside class="notes">
+						It'd the future, get on it!
+					</aside>
+				</section>
+
+				<section>
+					<h2>HTTP/1*</h2>
+					<aside class="notes">J/K, he's still here</aside>
+				</section>
+
+				<section>
+					<h2>Semantically Identical</h2>
+					<aside class="notes">
+						You get Request and Response messages, and they have headers!
+					</aside>
+				</section>
+
+				<section>
+					<h2>What's different then?</h2>
+					<aside class="notes">
+							Lots
+					</aside>
+				</section>
+
+				<!-- Example of nested vertical slides -->
+				<section>
+					<section>
+						<h2>HTTP/2 in 90 Seconds!</h2>
+					</section>
+					<section>
+						<h2>HTTP/2 Connection</h2>
+						<aside class="notes">
+							There's only one!
+						</aside>
+					</section>
+					<section>
+						<h2>How?</h2>
+					</section>
+					<section>
+						<h2>Multiplexed Streams</h2>
+						<aside class="notes">
+							Takes the place of multiple connections or *gulp* pipelining
+						</aside>
+					</section>
+					<section>
+						<h2>It's Binary!</h2>
+						<p>Unlike all plaintext HTTP before it</p>
+					</section>
+					<section>
+						<h2>Frames</h2>
+						<pre class="fragment">
++-----------------------------------------------+
+|                 Length (24)                   |
++---------------+---------------+---------------+
+|   Type (8)    |   Flags (8)   |
++-+-------------+---------------+-------------------------------+
+|R|                 Stream Identifier (31)                      |
++=+=============================================================+
+|                   Frame Payload (0...)                      ...
++---------------------------------------------------------------+
+						</pre>
+						<aside class="notes">Frames are binary chunks with a 9 octet header.</aside>
+					</section>
+
+					<section>
+						<h2>Frames</h2>
+						<p>What you need to know!</p>
+						<ul>
+							<li>There's a maximum length</li>
+							<li>Flags signal if more is coming</li>
+						</ul>
+						<aside class="notes">They do other stuff too!</aside>
+					</section>
+					<section>
+						<h2>Type (8)</h2>
+						<h4>10 Types</h4>
+						<ul>
+							<li>HEADERS</li>
+							<li>CONTINUATION</li>
+							<li class="fragment">PUSH_PROMISE</li>
+						</ul>
+						<aside class="notes">
+							We're only talking about 3 today
+						</aside>
+					</section>
+					<section>
+						<h2>PUSH_PROMISE?!</h2>
+						<aside class="notes">Push promises let us send multiple responses to a single request. Cool eh?</aside>
+					</section>
+				</section>
+
+				<section>
+					<h2>Phew</h2>
+				</section>
+
+
+
+				<section>
+					<section>
+						<h2>HPACK - <a href="http://tools.ietf.org/html/rfc7541">RFC 7541</a></h2>
+						<p>A whole RFC just for header compression!</p>
+					</section>
+					<section>
+						<h2>What's HPACK about?</h2>
+						<aside class="notes">HPACK is cheap. It wants to put as little on the wire as possible</aside>
+					</section>
+				</section>
+
+				<section>
+					<section>
+						<h2>Where HPACK fits in HTTP/2
+					</section>
+
+					<section>
+						<h2>HEADERS</h2>
+<pre>
+			  Name          Value
+			+------------+---------------+
+			|   :path    |       /       |
+			+------------+---------------+
+			| user-agent |      IE6      |
+			+------------+---------------+
+			|  :method   |     POST      |
+			+------------+---------------+
+			|   accept   |  text/plain   |
+			+------------+---------------+
+			|   cookie   |      ...      |
+			+------------+---------------+
+</pre>
+						<aside class="notes">Remember headers? talk about psuedo headers here</aside>
+					</section>
+					<section>
+						<h2>HPACK shrinks that</h2>
+<pre>
+		+--------------------------+
+		|                          |
+		|   Encoded Header Block   |
+		|                          |
+		+--------------------------+
+</pre>
+						<aside class="notes">This is smaller than plaintext</aside>
+					</section>
+					<section>
+						<h2>Maybe too big?</h2>
+					</section>
+				</section>
+
+
+				<section>
+					<section>
+						<h2>How it does it</h2>
+					</section>
+
+					<section>
+						<h2>Header Compression</h2>
+						<p>HTTP is stateless</p>
+						<p class="fragment">Stateless protocols are repetitive</p>
+						<p class="fragment">Stateless protocols are repetitive</p>
+					</section>
+
+					<section>
+            <h2>Compression Context is Stateful</h2>
+            <aside class="notes">It's stateful at the connection level, but each request is still stateless</aside>
+          </section>
+
+          <section>
+            <h2>What is a compression context?</h2>
+            <p class="fragment">Lookup table for common and recently used headers</p>
+            <aside class="notes"></aside>
+          </section>
+				</section>
+				<section>
+					<section>
+						<h2>The Static Table</h2>
+					</section>
+					<section data-background-transition="fade">
+            <h2>The Static Table</h2>
+<pre>
+	+-------+--------------------+---------------+
+	| Index | Header Name        | Header Value  |
+	+-------+--------------------+---------------+
+	| 1     | :authority         |               |
+	| 2     | :method            | GET           |
+	| 3     | :method            | POST          |
+	| 4     | :path              | /             |
+	| 5     | :path              | /index.html   |
+	| 6     | :scheme            | http          |
+	| 7     | :scheme            | https         |
+	| 8     | :status            | 200           |
+	| 13    | :status            | 404           |
+	| 14    | :status            | 500           |
+	| 15    | accept-charset     |               |
+	| 16    | accept-encoding    | gzip, deflate |
+	                    ...
+	| 57    | transfer-encoding  |               |
+	| 58    | user-agent         |               |
+	| 59    | vary               |               |
+	| 60    | via                |               |
+	| 61    | www-authenticate   |               |
+	+-------+--------------------+---------------+
+</pre>
+          </section>
+					<section>
+            <a href="https://github.com/joedevivo/chatterbox/blob/euc2015/src/headers.erl#L62-L123">headers.erl:62-123</a>
+<pre><code class="erlang" style="max-height:100%">
+        [{1  , <<":authority">>       , undefined},
+         {2  , <<":method">>          , <<"GET">>},
+         {3  , <<":method">>          , <<"POST">>},
+         {4  , <<":path">>            , <<"/">>},
+         {5  , <<":path">>            , <<"/index.html">>},
+         {6  , <<":scheme">>          , <<"http">>},
+         {7  , <<":scheme">>          , <<"https">>},
+         {8  , <<":status">>          , <<"200">>},
+         {13 , <<":status">>          , <<"404">>},
+         {14 , <<":status">>          , <<"500">>},
+         {15 , <<"accept-charset">>   , undefined},
+         {16 , <<"accept-encoding">>  , <<"gzip, deflate">>},
+                      ...
+         {57 , <<"transfer-encoding">>, undefined},
+         {58 , <<"user-agent">>       , undefined},
+         {59 , <<"vary">>             , undefined},
+         {60 , <<"via">>              , undefined},
+         {61 , <<"www-authenticate">> , undefined}]
+</code></pre>
+            <aside class="notes">
+              These are for really common headers. e.g. A response code of 200 is just going to be represented by "8".
+              Sometimes there's no value, but the header name is what we're saving here, so 15+value is always "accept-charset", Indexes 1-61, Sometimes value, sometimes not. They're all hardcoded and are constant.
+            </aside>
+          </section>
+				</section>
+
+				<section>
+					<h2>Initial Context</h2>
+					<h2>is</h2>
+					<h2>the Static Table</h2>
+				</section>
+
+				<section>
+					<section>
+						<h2>The Dynamic Table</h2>
+						<p>Add your own!</p>
+						<p>Indexes 62+</p>
+						<p>
+							Bounded by size in HTTP/2 connection settings as a security precaution
+						</p>
+						<aside class="notes">Take a bite out of CRIME</aside>
+					</section>
+
+					<section>
+						<a href="https://github.com/joedevivo/chatterbox/blob/euc2015/src/headers.erl#L15-L27">headers.erl:15-27</a>
+<pre><code data-trim class="erlang">
+-type header_name() :: binary().
+-type header_value():: binary().
+-define(DYNAMIC_TABLE_MIN_INDEX, 62).
+
+-record(dynamic_table, {
+		table = [] :: [{pos_integer(), header_name(), header_value()}],
+		max_size = 4096 :: pos_integer(),
+		size = 0 :: non_neg_integer()
+		}).
+-type dynamic_table() :: #dynamic_table{}.
+</code></pre>
+					</section>
+					<section>
+						<a href="https://github.com/joedevivo/chatterbox/blob/euc2015/src/hpack.erl">hpack.erl</a>
+<pre><code data-trim class="erlang">
+-spec encode([{binary(), binary()}], encode_context()) -> {binary(), encode_context()}.
+-spec decode(binary(), decode_context()) -> {headers(), decode_context()}.
+</code></pre>
+					</section>
+
+					<section>
+						<h4>Encoding any header that already exists in the context doesn't change the context</h4>
+<pre><code data-trim class="erlang">
+StaticTable = hpack:new_encode_context(),
+{HeaderBin, StaticTable} = encode([{<<":status">>, <<"200">>}], StaticTable).
+
+StaticTable = hpack:new_decode_context(),
+{[{<<":status">>, <<"200">>}], StaticTable} = decode(HeaderBin, StaticTable).
+</code></pre>
+					</section>
+
+					<section>
+            <h4>Encoding any header that doesn't already exists in the context changes the context</h4>
+<pre><code data-trim class="erlang">
+StaticTable = hpack:new_encode_context(),
+{HeaderBin, NewContext} = encode([{<<":status">>, <<"600">>}], StaticTable),
+NewContext =/= StaticTable,
+%% Second time we try and encode this header
+{HeaderBin, NewContext} = encode([{<<":status">>, <<"600">>}], NewContext).
+%% Order Matters!
+</code></pre>
+          </section>
+				</section>
+
+			</div>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+
+			// Full list of configuration options available at:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+				// Optional reveal.js plugins
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, condition: function() { return !!document.querySelector( 'pre code' ); }, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true },
+					{ src: 'plugin/notes/notes.js', async: true }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>

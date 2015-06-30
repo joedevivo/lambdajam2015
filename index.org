@@ -1,0 +1,735 @@
+#+TITLE: HPACK in Erlang
+#+AUTHOR: Joe DeVivo
+#+REVEAL_ROOT: .
+#+REVEAL_THEME: black
+#+REVEAL_PLUGINS: (highlight markdown notes)
+#+OPTIONS: ^:{}
+#+OPTIONS: toc:nil
+#+OPTIONS: num:nil
+#+OPTIONS: reveal_title_slide:nil
+#+OPTIONS: reveal_history:t
+
+* HPACK in Erlang
+#+REVEAL_HTML: <h3>HTTP/2 Header Encoding</h3>
+#+REVEAL_HTML: <p><small>Joe DeVivo / <a href="http://twitter.com/joedevivo">@joedevivo</a></small></p>
+
+* HTTP/2
+#+BEGIN_NOTES
+It's the future, get on it!
+#+END_NOTES
+
+* HTTP/1*
+#+BEGIN_NOTES
+J/K, he's still here
+#+END_NOTES
+
+* Semantically Identical
+#+BEGIN_NOTES
+You get Request and Response messages, and they have headers!
+#+END_NOTES
+
+* What's Different Then?
+#+BEGIN_NOTES
+Lots
+#+END_NOTES
+
+* HTTP/2 in 90 Seconds!
+
+** HTTP/2 Connection
+#+BEGIN_NOTES
+There's only one
+#+END_NOTES
+
+** How?
+
+** Multiplexed Streams
+#+BEGIN_NOTES
+Takes the place of multiple connections or *gulp* pipelining
+#+END_NOTES
+
+** It's Binary!
+#+BEGIN_NOTES
+Unlike all plaintext HTTP before it
+#+END_NOTES
+
+** Frames
+#+ATTR_REVEAL: :frag (appear)
+#+BEGIN_SRC
++-----------------------------------------------+
+|                 Length (24)                   |
++---------------+---------------+---------------+
+|   Type (8)    |   Flags (8)   |
++-+-------------+---------------+-------------------------------+
+|R|                 Stream Identifier (31)                      |
++=+=============================================================+
+|                   Frame Payload (0...)                      ...
++---------------------------------------------------------------+
+#+END_SRC
+
+#+BEGIN_NOTES
+Frames are binary chunks with a 9 octet header.
+#+END_NOTES
+
+** Frames
+   What you need to know!
+   - There's a maximum length
+   - Flags signal if more are coming
+#+BEGIN_NOTES
+They do other stuff too, but that's not important now
+#+END_NOTES
+
+** Type (8)
+#+REVEAL_HTML: <h4>10 Types</h4>
+   - HEADERS
+   - CONTINUATION
+#+REVEAL_HTML: <br/>
+#+ATTR_REVEAL: :frag (appear)
+   - PUSH_PROMISE
+#+BEGIN_NOTES
+We're only talking about three today
+#+END_NOTES
+
+** PUSH_PROMISE?!
+#+BEGIN_NOTES
+Push promises let us send multiple responses to a single request. Cool eh?
+#+END_NOTES
+
+* Phew!
+
+* HPACK - [[http://tools.ietf.org/html/rfc7541][RFC-7541]]
+  A whole spec just for header compression
+
+** What's HPACK About?
+#+BEGIN_NOTES
+HPACK is cheap. It wants to put as little on the wire as possible
+#+END_NOTES
+
+* Where HPACK fits in HTTP/2
+
+** HEADERS
+#+BEGIN_SRC
+			     Name          Value
+			+------------+---------------+
+			|   :path    |       /       |
+			+------------+---------------+
+			| user-agent |      IE6      |
+			+------------+---------------+
+			|  :method   |     POST      |
+			+------------+---------------+
+			|   accept   |  text/plain   |
+			+------------+---------------+
+			|   cookie   |      ...      |
+			+------------+---------------+
+#+END_SRC
+#+BEGIN_NOTES
+Remember headers? talk about psuedo headers here
+#+END_NOTES
+
+** HPACK Shrinks That
+#+BEGIN_SRC erlang
+hpack:encode(Headers, Context).
+#+END_SRC
+#+BEGIN_SRC
+		+--------------------------+
+		|                          |
+		|   Encoded Header Block   |
+		|                          |
+		+--------------------------+
+#+END_SRC
+#+BEGIN_NOTES
+This is smaller than plaintext
+#+END_NOTES
+
+** Maybe too big?
+#+BEGIN_NOTES
+Remember frame size? This block might be bigger than that
+#+END_NOTES
+
+** Break it up!
+#+BEGIN_SRC
++--------+ +--------+ +--------+
+|Fragment| |Fragment| |Fragment|
+|   #1   | |   #2   | |   #3   |
+|        | |        | |        |
++--------+ +--------+ +--------+
+#+END_SRC
+
+** They've been Framed!
+#+BEGIN_SRC
++------------+   +------------+   +------------+
+|  HEADERS   |   |CONTINUATION|   |CONTINUATION|
++------------+   +------------+   +------------+
+|    NONE    |   |    NONE    |   |END_HEADERS |
++------------+   +------------+   +------------+
+|Fragment #1 |   |Fragment #2 |   |Fragment #3 |
+|            |   |            |   |            |
++------------+   +------------+   +------------+
+#+END_SRC
+
+** Send them over the wire
+
+** Reconstruct the Encoded Header Block
+
+** HPACK Decode
+#+BEGIN_SRC erlang
+hpack:decode(BinaryHeaderBlock, Context).
+#+END_SRC
+
+** It's a header list again!
+
+* How it does it
+
+** Header Compression
+HTTP is stateless
+#+ATTR_REVEAL: :frag (appear)
+Stateless protocols are repetitive
+#+ATTR_REVEAL: :frag (appear)
+Stateless protocols are repetitive
+
+** Compression Context is Stateful
+#+BEGIN_NOTES
+It's stateful at the connection level, but each request is still stateless
+#+END_NOTES
+
+** What is a Compression Context?
+#+BEGIN_NOTES
+Lookup table for common and recently used headers
+#+END_NOTES
+
+* The Static Table
+#+BEGIN_SRC
+	+-------+--------------------+---------------+
+	| Index | Header Name        | Header Value  |
+	+-------+--------------------+---------------+
+	| 1     | :authority         |               |
+	| 2     | :method            | GET           |
+	| 3     | :method            | POST          |
+	| 4     | :path              | /             |
+	| 5     | :path              | /index.html   |
+	| 6     | :scheme            | http          |
+	| 7     | :scheme            | https         |
+	| 8     | :status            | 200           |
+	| 13    | :status            | 404           |
+	| 14    | :status            | 500           |
+	| 15    | accept-charset     |               |
+	| 16    | accept-encoding    | gzip, deflate |
+	                    ...
+	| 57    | transfer-encoding  |               |
+	| 58    | user-agent         |               |
+	| 59    | vary               |               |
+	| 60    | via                |               |
+	| 61    | www-authenticate   |               |
+	+-------+--------------------+---------------+
+#+END_SRC
+
+** [[https://github.com/joedevivo/chatterbox/blob/euc2015/src/headers.erl#L62-L123][hpack_index.erl]]
+#+BEGIN_SRC erlang
+        [{1  , <<":authority">>       , undefined},
+         {2  , <<":method">>          , <<"GET">>},
+         {3  , <<":method">>          , <<"POST">>},
+         {4  , <<":path">>            , <<"/">>},
+         {5  , <<":path">>            , <<"/index.html">>},
+         {6  , <<":scheme">>          , <<"http">>},
+         {7  , <<":scheme">>          , <<"https">>},
+         {8  , <<":status">>          , <<"200">>},
+         {13 , <<":status">>          , <<"404">>},
+         {14 , <<":status">>          , <<"500">>},
+         {15 , <<"accept-charset">>   , undefined},
+         {16 , <<"accept-encoding">>  , <<"gzip, deflate">>},
+                      ...
+         {57 , <<"transfer-encoding">>, undefined},
+         {58 , <<"user-agent">>       , undefined},
+         {59 , <<"vary">>             , undefined},
+         {60 , <<"via">>              , undefined},
+         {61 , <<"www-authenticate">> , undefined}]
+#+END_SRC
+
+#+BEGIN_NOTES
+These are for really common headers. e.g. A response code of 200 is
+just going to be represented by "8".  Sometimes there's no value, but
+the header name is what we're saving here, so 15+value is always
+"accept-charset", Indexes 1-61, Sometimes value, sometimes
+not. They're all hardcoded and are constant.
+#+END_NOTES
+
+* Initial Context
+#+REVEAL_HTML: <h2>IS</h2>
+#+REVEAL_HTML: <h2>the Static Table</h2>
+
+* The Dynamic Table
+  Add your own!
+  Indexes 62+
+  Bounded by size in the HTTP/2 Connection Settings
+
+#+BEGIN_NOTES
+Take a bite out of CRIME
+#+END_NOTES
+
+** Dynamic Table Source
+#+BEGIN_SRC erlang
+-type header_name() :: binary().
+-type header_value():: binary().
+-define(DYNAMIC_TABLE_MIN_INDEX, 62).
+
+-record(dynamic_table, {
+    table = [] :: [{pos_integer(), header_name(), header_value()}],
+    max_size = 4096 :: pos_integer(),
+    size = 0 :: non_neg_integer()
+}).
+-type dynamic_table() :: #dynamic_table{}.
+#+END_SRC
+
+#+BEGIN_NOTES
+Initial context has a dynamic table, it's just empty
+#+END_NOTES
+
+** hpack API
+#+BEGIN_SRC erlang
+-spec encode([{binary(), binary()}], encode_context()) ->
+                                 {binary(), encode_context()}.
+-spec decode(binary(), decode_context()) ->
+                                 {headers(), decode_context()}.
+#+END_SRC
+
+** Identity Property
+   Encoding a header that has already been encoded, does not change the context
+#+BEGIN_SRC erlang
+StaticTable = hpack:new_encode_context(),
+{HeaderBin, StaticTable} =
+    hpack:encode([{<<":status">>, <<"200">>}], StaticTable).
+
+StaticTable = hpack:new_decode_context(),
+{[{<<":status">>, <<"200">>}], StaticTable} =
+    hpack:decode(HeaderBin, StaticTable).
+#+END_SRC
+
+** Context Modifying Operation
+   Encoding something new, changes the dynamic table
+#+BEGIN_SRC erlang
+StaticTable = hpack:new_encode_context(),
+{HeaderBin, NewContext} =
+    hpack:encode([{<<":status">>, <<"600">>}], StaticTable),
+NewContext =/= StaticTable,
+%% Second time we try and encode this header
+{HeaderBin, NewContext} =
+    hpack:encode([{<<":status">>, <<"600">>}], NewContext).
+#+END_SRC
+#+BEGIN_NOTES
+notice the pattern match on the last line
+#+END_NOTES
+
+* Where do they live?
+
+** There Are Four Contexts!
+   Given two peers: X & Y, connected over C
+   - Context A1: encoding outbound requests on X to Y over C
+   - Context A2: decoding inbound requests on Y from X over C
+   - Context B1: encoding outbound responses on Y to X over C
+   - Context B2: decoding inbound responses on X from Y over C
+
+#+BEGIN_NOTES
+Two for each peer, Maybe easier to think of as one for Requests and
+one for Responses. If you open multiple connections, there will be 4
+contexts per connection, but you wouldn't do that because you can
+multiplex :D
+#+END_NOTES
+
+** The Basic Case
+#+BEGIN_SRC
+                    +---------------+           +---------------+
+                    |Peer X (Client)|           |Peer Y (Server)|
++-------------------+---------------+           +---------------+-------------------+
+|                                   |           |                                   |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+| |Plain Req |   |Encode (A1)|   | Encoded Request |   |Decode (A2)|   |Plain Req | |
+| | Headers  |-->|  Context  |-->|     Headers     |-->|  Context  |-->| Headers  | |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+|                                   |   Cloud   |                                   |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+| |Plain Resp|   |Decode (B2)|   |Encoded Response |   |Encode (B1)|   |Plain Resp| |
+| | Headers  |<--|  Context  |<--|     Headers     |<--+- Context  |<--| Headers  | |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+|                                   |           |                                   |
+|                                   |           |                                   |
++-----------------------------------+           +-----------------------------------+
+#+END_SRC
+
+** A More Interesting Case
+#+BEGIN_SRC
+                   +---------------+           +---------------+
+                    |Peer X (Client)|           |Peer Y (Server)|
++-------------------+---------------+           +---------------+-------------------+
+|                                   |           |                                   |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #1|-->|           |-->|   Headers #1    |-->|           |-->|Headers #1| |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #2|-->|           |-->|   Headers #2    |-->|           |-->|Headers #2| |
+| +----------+   |Encode (A1)|   +--+-----------+--+   |Decode (A2)|   +----------+ |
+| +----------+   |  Context  |   +--+-----------+--+   |  Context  |   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #3|-->|           |-->|   Headers #3    |-->|           |-->|Headers #3| |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| +----------+   |           |   +--+-----------+--+   |           |   +----------+ |
+| |Plain Req |   |           |   | Encoded Request |   |           |   |Plain Req | |
+| |Headers #4|-->|           |-->|   Headers #4    |-->|           |-->|Headers #4| |
+| +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
++-----------------------------------+           +-----------------------------------+
+#+END_SRC
+
+* How HPACK Packs
+
+** Data Types
+   - Numbers
+   - Strings
+
+** Indexed Header Field
+#+BEGIN_SRC
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 1 |        Index (7+)         |
++---+---------------------------+
+#+END_SRC
+#+BEGIN_NOTES
+This is the easiest one! It says that everything you need is in the context, at the specified index
+#+END_NOTES
+
+** 7+?
+   - Indexes can be greater than 2^7-1 (127)
+   - Sometimes HPACK has as few as 5 bits to use.
+
+** Integer Representation (N=5)
+#+BEGIN_SRC
+     0   1   2   3   4   5   6   7
+   +---+---+---+---+---+---+---+---+
+   | ? | ? | ? | 1   1   1   1   1 |
+   +---+---+---+-------------------+
+   | 1 |    Value-(2^N-1) LSB      |
+   +---+---------------------------+
+                  ...
+   +---+---------------------------+
+   | 0 |    Value-(2^N-1) MSB      |
+   +---+---------------------------+
+#+END_SRC
+#+BEGIN_NOTES
+
+#+END_NOTES
+
+** 1337, N=5
+#+BEGIN_SRC
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 1306
+| 1 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |  1306>=128, encode(154), I=1306/128
+| 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |  10<128, encode(10), done
++---+---+---+---+---+---+---+---+
+#+END_SRC
+#+BEGIN_NOTES
+Since we're sending something bigger than 31, we need to use more bytes, but
+let's not waste those 5 bits, take the number we're encoding, and subtract 31
+since we already sent it. Then we can only send 7 bits per byte to honor the
+continuation bit. so send the 7 least significant bits, shift right, repeat.
+#+END_NOTES
+
+** hpack_integer
+#+BEGIN_SRC erlang
+encode(Int, Prefix) when Int < (1 bsl Prefix - 1) ->
+    <<Int:Prefix>>;
+encode(Int, Prefix) ->
+    PrefixMask = 1 bsl Prefix - 1,
+    Remaining = Int - PrefixMask,
+    Bin = encode_(Remaining, <<>>),
+    <<PrefixMask:Prefix, Bin/binary>>.
+#+END_SRC
+
+** hpack_integer (cont)
+#+BEGIN_SRC erlang
+-spec encode_(non_neg_integer(), binary()) -> binary().
+encode_(0, BinAcc) ->
+    BinAcc;
+encode_(I, BinAcc) ->
+    Rem = I bsr 7,
+    This = (I rem 128),
+    ThisByte = case Rem =:= 0 of
+        true ->
+            This;
+        _ -> %% Adds the continuation bit
+            128 + This
+    end,
+    encode_(Rem, <<BinAcc/binary, ThisByte>>).
+#+END_SRC
+
+** Livin' on the edge: 31, N=5
+#+BEGIN_SRC
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 0
+| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  0<128, encode(0), done
++---+---+---+---+---+---+---+---+
+#+END_SRC
+#+BEGIN_NOTES
+In this one case, where the number you're encoding is 2^N-1, you have to send a
+0 byte otherwise HPACK will start interpreting what follows as more integer.
+
+I only found this because Wireshark
+#+END_NOTES
+
+** Literal Header Field w/ Index
+#+BEGIN_SRC
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 0 | 1 |      Index (6+)       |
++---+---+-----------------------+
+| H |     Value Length (7+)     |
++---+---------------------------+
+| Value String (Length octets)  |
++-------------------------------+
+#+END_SRC
+#+BEGIN_NOTES
+A Name that's already in the table, but a different value. Two integers to
+encode! One with N=6 and one with N=7. H bit. Value. Straight ascii or huffman
+#+END_NOTES
+
+** Huffman Code
+   - uses less than 8 bits per char (sometimes)
+   - the more common the char, the fewer bits
+
+** Huffman examples
+#+BEGIN_SRC
+                                                        code
+                          code as bits                 as hex   len
+        sym              aligned to MSB                aligned   in
+                                                       to LSB   bits
+   ' ' ( 32)  |010100                                       14  [ 6]
+   '!' ( 33)  |11111110|00                                 3f8  [10]
+   '"' ( 34)  |11111110|01                                 3f9  [10]
+   '#' ( 35)  |11111111|1010                               ffa  [12]
+   '$' ( 36)  |11111111|11001                             1ff9  [13]
+   '0' ( 48)  |00000                                         0  [ 5]
+   '1' ( 49)  |00001                                         1  [ 5]
+   '2' ( 50)  |00010                                         2  [ 5]
+   'r' (114)  |101100                                       2c  [ 6]
+   's' (115)  |01000                                         8  [ 5]
+   't' (116)  |01001                                         9  [ 5]
+       (253)  |11111111|11111111|11111101|111          7ffffef  [27]
+       (254)  |11111111|11111111|11111110|000          7fffff0  [27]
+       (255)  |11111111|11111111|11111011|10           3ffffee  [26]
+#+END_SRC
+#+BEGIN_NOTES
+Non-displayable chars are big! but they're rare. letters and numbers are short.
+Created from statistical analysis of web traffic
+#+END_NOTES
+
+** Literal Header Field non-Indexed
+#+BEGIN_SRC
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 0 | 1 |           0           |
++---+---+-----------------------+
+| H |     Name Length (7+)      |
++---+---------------------------+
+|  Name String (Length octets)  |
++---+---------------------------+
+| H |     Value Length (7+)     |
++---+---------------------------+
+| Value String (Length octets)  |
++-------------------------------+
+#+END_SRC
+
+** Types of Literal Fields
+   - with Indexing - added to the dynamic table
+   - without Indexing - not added to the DT
+   - never Indexed - never added to any DT
+#+BEGIN_NOTES
+All three are ways of saying the same thing, as far as "here's a header and
+value, but some are not compressed. "never" means no proxies can compress it
+either, while "without" applies to just one hop.
+#+END_NOTES
+
+** Binary Pattern Matching!
+#+BEGIN_SRC erlang
+decode(<<>>, HeadersAcc, C) -> {HeadersAcc, C};
+%% First bit is '1', so it's an 'Indexed Header Feild'
+decode(<<2#1:1,_/bits>>=B, HeaderAcc, Context) ->
+    decode_indexed_header(B, HeaderAcc, Context);
+%% First two bits are '01' so it's a 'Literal Header Field with Incremental Indexing'
+decode(<<2#01:2,_/bits>>=B, HeaderAcc, Context) ->
+    decode_literal_header_with_indexing(B, HeaderAcc, Context);
+%% First four bits are '0000' so it's a 'Literal Header Field without Indexing'
+decode(<<2#0000:4,_/bits>>=B, HeaderAcc, Context) ->
+    decode_literal_header_without_indexing(B, HeaderAcc, Context);
+%% First four bits are '0001' so it's a 'Literal Header Field never Indexed'
+decode(<<2#0001:4,_/bits>>=B, HeaderAcc, Context) ->
+    decode_literal_header_never_indexed(B, HeaderAcc, Context);
+%% First three bits are '001' so it's a 'Dynamic Table Size Update'
+decode(<<2#001:3,_/bits>>=B, HeaderAcc, Context) ->
+    decode_dynamic_table_size_update(B, HeaderAcc, Context);
+#+END_SRC
+#+BEGIN_NOTES
+Pattern Matching makes this easy! Each of those sub clauses passes along to
+something that knows how to read those bytes
+#+END_NOTES
+
+* HPACK Tables Example
+
+** Three Requests
+#+BEGIN_SRC erlang
+Headers1 = [
+           {<<":path">>, <<"/">>},
+           {<<"user-agent">>, <<"my cool browser">>},
+           {<<"x-custom-header">>, <<"some custom value">>}
+          ],
+HeaderContext1 = hpack:new_encode_context(),
+{HeadersBin1, HeaderContext2} = hpack:encode(Headers1, HeaderContext1),
+
+Headers2 = [
+           {<<":path">>, <<"/some_file.html">>},
+           {<<"user-agent">>, <<"my cool browser">>},
+           {<<"x-custom-header">>, <<"some custom value">>}
+          ],
+{HeadersBin2, HeaderContext3} = hpack:encode(Headers2, HeaderContext2),
+
+Headers3 = [
+           {<<":path">>, <<"/some_file.html">>},
+           {<<"user-agent">>, <<"my cool browser">>},
+           {<<"x-custom-header">>, <<"new value">>}
+          ],
+{HeadersBin3, _HeaderContext4} = hpack:encode(Headers3, HeaderContext3),
+#+END_SRC
+
+** Request #1
+#+BEGIN_SRC erlang
+Headers1 = [
+   {<<":path">>, <<"/">>},
+   {<<"user-agent">>, <<"my cool browser">>},
+   {<<"x-custom-header">>, <<"some custom value">>}
+],
+#+END_SRC
+
+** Wiresharked R1
+#+BEGIN_SRC
+Header: :path: /
+    Representation: Indexed Header Field
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>4</b></pre>
+#+BEGIN_SRC
+Header: user-agent: my cool browser
+    Representation: Literal Header Field with Incremental Indexing - Indexed Name
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>58</b></pre>
+#+REVEAL_HTML:<pre>    Value: <b>my cool browser</b></pre>
+#+BEGIN_SRC
+Header: x-custom-header: some custom value
+    Representation: Literal Header Field with Incremental Indexing - New Name
+#+END_SRC
+#+REVEAL_HTML:<pre>    Name: <b>x-custom-header</b></pre>
+#+REVEAL_HTML:<pre>    Value: <b>some custom value</b></pre>
+#+BEGIN_NOTES
+Look at the first and second headers' index, and the third has none
+#+END_NOTES
+
+** R1 Context Updates
+#+BEGIN_SRC erlang
+DynamicTable = [
+                {62,<<"x-custom-header">>,<<"some custom value">>},
+                {63,<<"user-agent">>,     <<"my cool browser">>}
+              ]
+#+END_SRC
+   - :path changes nothing
+   - "user-agent"/"my cool browser" is now Index 62
+   - "x-custom-header"/"some custom value" is now Index 62
+   - "user-agent"/"my cool browser" is +1'd to 63
+
+** Request #2
+#+BEGIN_SRC erlang
+Headers2 = [
+  {<<":path">>, <<"/some_file.html">>},
+  {<<"user-agent">>, <<"my cool browser">>},
+  {<<"x-custom-header">>, <<"some custom value">>}
+],
+#+END_SRC
+
+** Wiresharked R2</h4>
+#+BEGIN_SRC
+Header: :path: /some_file.html
+    Representation: Literal Header Field with Incremental Indexing - Indexed Name
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>4</b></pre>
+#+REVEAL_HTML:<pre>    Value: <b>/some_file.html</b></pre>
+#+BEGIN_SRC
+        Header: user-agent: my cool browser
+            Representation: Indexed Header Field
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>64</b></pre>
+#+BEGIN_SRC
+        Header: x-custom-header: some custom value
+            Representation: Indexed Header Field
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>63</b></pre>
+#+BEGIN_NOTES
+Look at those indexes? 64 & 63? Didn't I just say 62 & 63? Yes! It's because the
+encoding context is updated per header, not per request. Ordering!
+#+END_NOTES
+
+** R2: Context updates
+#+BEGIN_SRC erlang
+[
+  {62,<<":path">>,          <<"/some_file.html">>},
+  {63,<<"x-custom-header">>,<<"some custom value">>},
+  {64,<<"user-agent">>,     <<"my cool browser">>}
+]
+#+END_SRC
+   - ":path"/"/some_file.html" is the new Index 62
+   - "x-custom-header"/"some custom value" is +1'd 63
+   - "user-agent"/"my cool browser" is +1'd to 64
+
+#+BEGIN_NOTES
+FIFO queue. First in, First out. Falls of the end.
+#+END_NOTES
+
+** Request #3
+#+BEGIN_SRC erlang
+Headers3 = [
+  {<<":path">>, <<"/some_file.html">>},
+  {<<"user-agent">>, <<"my cool browser">>},
+  {<<"x-custom-header">>, <<"new value">>}
+],
+#+END_SRC
+** Wiresharked R3
+#+BEGIN_SRC
+Header: :path: /some_file.html
+    Representation: Indexed Header Field
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>62</b></pre>
+#+BEGIN_SRC
+Header: user-agent: my cool browser
+    Representation: Indexed Header Field
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>64</b></pre>
+#+BEGIN_SRC
+Header: x-custom-header: new value
+    Representation: Literal Header Field with Incremental Indexing - Indexed Name
+#+END_SRC
+#+REVEAL_HTML:<pre>    Index: <b>63</b></pre>
+#+REVEAL_HTML:<pre>    Value: <b>new value</b></pre>
+
+** R3: Context updates
+#+BEGIN_SRC erlang
+[
+  {62,<<"x-custom-header">>,<<"new value">>},
+  {63,<<":path">>,          <<"/some_file.html">>},
+  {64,<<"x-custom-header">>,<<"some custom value">>},
+  {65,<<"user-agent">>,     <<"my cool browser">>}
+]
+#+END_SRC
+
+   - "x-custom-header"/"new value" is the new 62</li>
+   - ":path"/"/some_file.html" is +1'd to 63</li>
+   - "x-custom-header"/"some custom value" is +1'd 64</li>
+   - "user-agent"/"my cool browser" is +1'd to 65</li>
+#+BEGIN_NOTES
+when the sum of the sizes of name/value pairs exceedes the maximum table size,
+that last header falls off the end. bye!
+#+END_NOTES
