@@ -311,6 +311,9 @@ Remember frame size? This block might be bigger than that
 </section>
 <section id="slide-sec-9-7">
 <h3 id="sec-9-7">Reconstruct the Encoded Header Block</h3>
+<p>
+TODO: ASCII
+</p>
 
 </section>
 <section id="slide-sec-9-8">
@@ -349,7 +352,8 @@ Stateless protocols are repetitive
 <h3 id="sec-10-2">Compression Context is Stateful</h3>
 <aside class="notes">
 <p>
-It's stateful at the connection level, but each request is still stateless
+It's stateful at the connection level, but each request is still stateless. This
+state lets us share a secret code for efficient communications
 </p>
 
 </aside>
@@ -537,6 +541,17 @@ notice the pattern match on the last line
 </aside>
 
 </section>
+<section id="slide-sec-13-5">
+<h3 id="sec-13-5">Every Header changes the context</h3>
+<aside class="notes">
+<p>
+The context changes at most N times per call to hpack:encode/decode, but the API
+only shows the end result
+</p>
+
+</aside>
+
+</section>
 </section>
 <section>
 <section id="slide-sec-14">
@@ -613,6 +628,40 @@ multiplex :D
 | |Headers #4|--&gt;|           |--&gt;|   Headers #4    |--&gt;|           |--&gt;|Headers #4| |
 | +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
 +-----------------------------------+           +-----------------------------------+
+</pre>
+
+</section>
+<section id="slide-sec-14-4">
+<h3 id="sec-14-4">Order Matters!</h3>
+<pre  class="example">
++---------------+           +---------------+
+|Peer X (Client)|           |Peer Y (Server)|
++---------------+           +---------------+------------------------------+
+                |           |                                              |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+         |   | Encoded Request |              |           |   |Plain Req | |
+         |--&gt;|   Headers #1    |-------------&gt;|           |--&gt;|Headers #1| |
+         |   +--+-----------+--+              |           |   +----------+ |
+</pre>
+<pre>         |   +--+-----------+--+              |           |   <b>+----------+</b> |</pre>
+<pre>         |   | Encoded Request |              |           |   <b>| Bad Req  |</b> |</pre>
+<pre>         |-->|   Headers #2    |<b>------\       </b>|           |--><b>|Headers #3|</b> |</pre>
+<pre>code (A1)|   +--+-----------+--+<b>   ----\-----></b>|Decode (A2)|   <b>+----------+</b> |</pre>
+<pre>Context  |   +--+-----------+--+<b>  /     \     </b>|  Context  |   +----------+ |</pre>
+<pre>         |   | Encoded Request |<b>-/       \    </b>|           |   |Bad Req   | |</pre>
+<pre>         |-->|   Headers #3    |<b>          ---></b>|           |-->|Headers #2| |</pre>
+<pre  class="example">
+         |   +--+-----------+--+              |           |   +----------+ |
+         |   +--+-----------+--+              |           |   +----------+ |
+         |   | Encoded Request |              |           |   |Plain Req | |
+         |--&gt;|   Headers #4    |-------------&gt;|           |--&gt;|Headers #4| |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+                |           |                                              |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+code (B2)|   |Encoded Response |              |Encode (B1)|   |Plain Resp| |
+Context  |&lt;--|     Headers     |&lt;-------------|  Context  |&lt;--| Headers  | |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+----------------+           +----------------------------------------------+
 </pre>
 
 </section>
@@ -697,43 +746,144 @@ continuation bit. so send the 7 least significant bits, shift right, repeat.
 
 </section>
 <section id="slide-sec-15-6">
-<h3 id="sec-15-6">hpack_integer</h3>
-<div class="org-src-container">
-
-<pre  class="src src-erlang"><span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">Prefix</span>) <span style="color: #718c00;">when</span> <span style="color: #eab700;">Int</span> &lt; (1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">Prefix</span> - 1) -&gt;
-    &lt;&lt;<span style="color: #eab700;">Int</span>:<span style="color: #eab700;">Prefix</span>&gt;&gt;;
-<span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">Prefix</span>) -&gt;
-    <span style="color: #eab700;">PrefixMask</span> = 1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">Prefix</span> - 1,
-    <span style="color: #eab700;">Remaining</span> = <span style="color: #eab700;">Int</span> - <span style="color: #eab700;">PrefixMask</span>,
-    <span style="color: #eab700;">Bin</span> = <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">Remaining</span>, &lt;&lt;&gt;&gt;),
-    &lt;&lt;<span style="color: #eab700;">PrefixMask</span>:<span style="color: #eab700;">Prefix</span>, <span style="color: #eab700;">Bin</span>/binary&gt;&gt;.
+<h3 id="sec-15-6">1306</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 1 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |
+| 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
++---+---+---+---+---+---+---+---+
 </pre>
-</div>
+<aside class="notes">
+<p>
+N doesn't matter any more. We've got 7 bits, so put the least significant 7 in
+the first byte (26). Since we've got more to encode, flip the first bit to 1,
+and move on.
+</p>
+
+</aside>
 
 </section>
 <section id="slide-sec-15-7">
-<h3 id="sec-15-7">hpack_integer (cont)</h3>
+<h3 id="sec-15-7">10</h3>
+<pre  class="example">
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
++---+---+---+---+---+---+---+---+
+</pre>
+<aside class="notes">
+<p>
+Now that we bitshifted 7, what's left is 10. Send it over, without the first bit
+set, letting hpack know we're done with this integer
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-8">
+<h3 id="sec-15-8">hpack_integer:encode(1337, 5)</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">N</span>) <span style="color: #718c00;">when</span> <span style="color: #eab700;">Int</span> &lt; (1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">N</span> - 1) -&gt;
+    &lt;&lt;<span style="color: #eab700;">Int</span>:<span style="color: #eab700;">N</span>&gt;&gt;;
+<span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">N</span>) -&gt;
+    <span style="color: #eab700;">Prefix</span> = 1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">N</span> - 1,
+    <span style="color: #eab700;">Remaining</span> = <span style="color: #eab700;">Int</span> - <span style="color: #eab700;">Prefix</span>,
+    <span style="color: #eab700;">Bin</span> = <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">Remaining</span>, &lt;&lt;&gt;&gt;),
+    &lt;&lt;<span style="color: #eab700;">Prefix</span>:<span style="color: #eab700;">N</span>, <span style="color: #eab700;">Bin</span>/binary&gt;&gt;.
+</pre>
+</div>
+
+<aside class="notes">
+<p>
+This is all about figuring out how many bits we have to work with (N), and if 2<sup>N</sup>-1 is &lt; the number we're encoding (clause 1) or &gt;= (clause 2)
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-9">
+<h3 id="sec-15-9">&lt;</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">N</span>) <span style="color: #718c00;">when</span> <span style="color: #eab700;">Int</span> &lt; (1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">N</span> - 1) -&gt;
+    &lt;&lt;<span style="color: #eab700;">Int</span>:<span style="color: #eab700;">N</span>&gt;&gt;;
+</pre>
+</div>
+<aside class="notes">
+<p>
+If it's smaller, we just fit it in N bits and call it a day
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-10">
+<h3 id="sec-15-10">&gt;=</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang"><span style="color: #f5871f;">encode</span>(<span style="color: #eab700;">Int</span>, <span style="color: #eab700;">N</span>) -&gt;
+    <span style="color: #eab700;">Prefix</span> = 1 <span style="color: #8959a8;">bsl</span> <span style="color: #eab700;">N</span> - 1, <span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">(2^N)-1</span>
+    <span style="color: #eab700;">Remaining</span> = <span style="color: #eab700;">Int</span> - <span style="color: #eab700;">Prefix</span>,
+    <span style="color: #eab700;">Bin</span> = <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">Remaining</span>, &lt;&lt;&gt;&gt;),
+    &lt;&lt;<span style="color: #eab700;">Prefix</span>:<span style="color: #eab700;">N</span>, <span style="color: #eab700;">Bin</span>/binary&gt;&gt;.
+</pre>
+</div>
+<aside class="notes">
+<p>
+If it's &gt;=, we subtract 2<sup>N</sup>-1, and encode the remaining Int
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-11">
+<h3 id="sec-15-11">hpack_integer</h3>
 <div class="org-src-container">
 
 <pre  class="src src-erlang"><span style="color: #8959a8;">-spec</span> <span style="color: #4271ae;">encode_</span>(<span style="color: #8959a8;">non_neg_integer</span>(), <span style="color: #8959a8;">binary</span>()) -&gt;<span style="color: #f5871f;"> </span><span style="color: #8959a8;">binary</span>().
 <span style="color: #f5871f;">encode_</span>(0, <span style="color: #eab700;">BinAcc</span>) -&gt;
     <span style="color: #eab700;">BinAcc</span>;
 <span style="color: #f5871f;">encode_</span>(<span style="color: #eab700;">I</span>, <span style="color: #eab700;">BinAcc</span>) -&gt;
-    <span style="color: #eab700;">Rem</span> = <span style="color: #eab700;">I</span> <span style="color: #8959a8;">bsr</span> 7,
-    <span style="color: #eab700;">This</span> = (<span style="color: #eab700;">I</span> <span style="color: #8959a8;">rem</span> 128),
-    <span style="color: #eab700;">ThisByte</span> = <span style="color: #718c00;">case</span> <span style="color: #eab700;">Rem</span> =:= 0 <span style="color: #718c00;">of</span>
-        true -&gt;
-            <span style="color: #eab700;">This</span>;
+    <span style="color: #eab700;">LeastSigSeven</span> = (<span style="color: #eab700;">I</span> <span style="color: #8959a8;">rem</span> 128),
+    <span style="color: #eab700;">RestToEncode</span> = <span style="color: #eab700;">I</span> <span style="color: #8959a8;">bsr</span> 7,
+    <span style="color: #eab700;">ThisByte</span> = <span style="color: #718c00;">case</span> <span style="color: #eab700;">RestToEncode</span> <span style="color: #718c00;">of</span>
+        0 -&gt;
+            <span style="color: #eab700;">LeastSigSeven</span>;
         <span style="color: #eab700;">_</span> -&gt;<span style="color: #f5871f;"> </span><span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">Adds the continuation bit</span>
-            128 + <span style="color: #eab700;">This</span>
+            128 + <span style="color: #eab700;">LeastSigSeven</span>
     <span style="color: #718c00;">end</span>,
-    <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">Rem</span>, &lt;&lt;<span style="color: #eab700;">BinAcc</span>/binary, <span style="color: #eab700;">ThisByte</span>&gt;&gt;).
+    <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">RestToEncode</span>, &lt;&lt;<span style="color: #eab700;">BinAcc</span>/binary, <span style="color: #eab700;">ThisByte</span>&gt;&gt;).
 </pre>
 </div>
 
 </section>
-<section id="slide-sec-15-8">
-<h3 id="sec-15-8">Livin' on the edge: 31, N=5</h3>
+<section id="slide-sec-15-12">
+<h3 id="sec-15-12">call stack</h3>
+<div class="org-src-container">
+
+<pre  class="src src-erlang">EncInt = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>(1337, 5) -&gt;
+  &lt;&lt;2#11111:5, <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode_</span>(1306, &lt;&lt;&gt;&gt;)&gt;&gt;.
+hpack:<span style="color: #eab700;">_encode</span>(1306, &lt;&lt;&gt;&gt;) -&gt;
+  hpack:<span style="color: #eab700;">_encode</span>(10, &lt;&lt;2#10011010&gt;&gt;).
+<span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode_</span>(10, &lt;&lt;2#10011010&gt;&gt;) -&gt;
+  &lt;&lt;2#10011010,2#00001010&gt;&gt;.
+
+<span style="color: #eab700;">EncInt</span> = &lt;&lt;2#11111:5,2#10011010,2#00001010&gt;&gt;.
+</pre>
+</div>
+
+<aside class="notes">
+<p>
+Then you just add this to whatever incomplete byte you were working with and it's an even binary again.
+</p>
+
+</aside>
+
+</section>
+<section id="slide-sec-15-13">
+<h3 id="sec-15-13">Livin' on the edge: 31, N=5</h3>
 <pre  class="example">
   0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
@@ -754,8 +904,8 @@ I only found this because Wireshark
 </aside>
 
 </section>
-<section id="slide-sec-15-9">
-<h3 id="sec-15-9">Literal Header Field w/ Index</h3>
+<section id="slide-sec-15-14">
+<h3 id="sec-15-14">Literal Header Field w/ Index</h3>
 <pre  class="example">
   0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
@@ -775,8 +925,8 @@ encode! One with N=6 and one with N=7. H bit. Value. Straight ascii or huffman
 </aside>
 
 </section>
-<section id="slide-sec-15-10">
-<h3 id="sec-15-10">Huffman Code</h3>
+<section id="slide-sec-15-15">
+<h3 id="sec-15-15">Huffman Code</h3>
 <ul>
 <li>uses less than 8 bits per char (sometimes)</li>
 <li>the more common the char, the fewer bits</li>
@@ -784,8 +934,8 @@ encode! One with N=6 and one with N=7. H bit. Value. Straight ascii or huffman
 </ul>
 
 </section>
-<section id="slide-sec-15-11">
-<h3 id="sec-15-11">Huffman examples</h3>
+<section id="slide-sec-15-16">
+<h3 id="sec-15-16">Huffman examples</h3>
 <pre  class="example">
                                                      code
                        code as bits                 as hex   len
@@ -815,8 +965,8 @@ Created from statistical analysis of web traffic
 </aside>
 
 </section>
-<section id="slide-sec-15-12">
-<h3 id="sec-15-12">Literal Header Field non-Indexed</h3>
+<section id="slide-sec-15-17">
+<h3 id="sec-15-17">Literal Header Field non-Indexed</h3>
 <pre  class="example">
   0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
@@ -833,8 +983,8 @@ Created from statistical analysis of web traffic
 </pre>
 
 </section>
-<section id="slide-sec-15-13">
-<h3 id="sec-15-13">Types of Literal Fields</h3>
+<section id="slide-sec-15-18">
+<h3 id="sec-15-18">Types of Literal Fields</h3>
 <ul>
 <li>with Indexing - added to the dynamic table</li>
 <li>without Indexing - not added to the DT</li>
@@ -851,8 +1001,8 @@ either, while "without" applies to just one hop.
 </aside>
 
 </section>
-<section id="slide-sec-15-14">
-<h3 id="sec-15-14">Binary Pattern Matching!</h3>
+<section id="slide-sec-15-19">
+<h3 id="sec-15-19">Binary Pattern Matching!</h3>
 <div class="org-src-container">
 
 <pre  class="src src-erlang"><span style="color: #f5871f;">decode</span>(&lt;&lt;&gt;&gt;, <span style="color: #eab700;">HeadersAcc</span>, <span style="color: #eab700;">C</span>) -&gt;<span style="color: #f5871f;"> </span>{<span style="color: #eab700;">HeadersAcc</span>, <span style="color: #eab700;">C</span>};
@@ -990,7 +1140,7 @@ Look at the first and second headers' index, and the third has none
 
 </section>
 <section id="slide-sec-16-6">
-<h3 id="sec-16-6">Wiresharked R2&lt;/h4&gt;</h3>
+<h3 id="sec-16-6">Wiresharked R2</h3>
 <pre  class="example">
 Header: :path: /some_file.html
     Representation: Literal Header Field with Incremental Indexing - Indexed Name

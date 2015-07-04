@@ -71,7 +71,9 @@ body {
   max-height: 95%; }
 
 .reveal strong, .reveal b {
-  font-weight: bold; }
+    font-weight: bold;
+    color: #42AFFA;
+}
 
 .reveal em {
   font-style: italic; }

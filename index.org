@@ -1,3 +1,4 @@
+#+STARTUP: showeverything
 #+TITLE: HPACK in Erlang
 #+AUTHOR: Joe DeVivo
 #+REVEAL_ROOT: .
@@ -170,6 +171,7 @@ Remember frame size? This block might be bigger than that
 ** Send them over the wire
 
 ** Reconstruct the Encoded Header Block
+TODO: ASCII
 
 ** HPACK Decode
 #+BEGIN_SRC erlang
@@ -189,7 +191,8 @@ Stateless protocols are repetitive
 
 ** Compression Context is Stateful
 #+BEGIN_NOTES
-It's stateful at the connection level, but each request is still stateless
+It's stateful at the connection level, but each request is still stateless. This
+state lets us share a secret code for efficient communications
 #+END_NOTES
 
 ** What is a Compression Context?
@@ -319,6 +322,12 @@ NewContext =/= StaticTable,
 notice the pattern match on the last line
 #+END_NOTES
 
+** Every Header changes the context
+#+BEGIN_NOTES
+The context changes at most N times per call to hpack:encode/decode, but the API
+only shows the end result
+#+END_NOTES
+
 * Where do they live?
 
 ** There Are Four Contexts!
@@ -380,6 +389,38 @@ multiplex :D
 +-----------------------------------+           +-----------------------------------+
 #+END_SRC
 
+** Order Matters!
+#+BEGIN_SRC
++---------------+           +---------------+
+|Peer X (Client)|           |Peer Y (Server)|
++---------------+           +---------------+------------------------------+
+                |           |                                              |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+         |   | Encoded Request |              |           |   |Plain Req | |
+         |-->|   Headers #1    |------------->|           |-->|Headers #1| |
+         |   +--+-----------+--+              |           |   +----------+ |
+#+END_SRC
+#+REVEAL_HTML:<pre>         |   +--+-----------+--+              |           |   <b>+----------+</b> |</pre>
+#+REVEAL_HTML:<pre>         |   | Encoded Request |              |           |   <b>| Bad Req  |</b> |</pre>
+#+REVEAL_HTML:<pre>         |-->|   Headers #2    |<b>------\       </b>|           |--><b>|Headers #3|</b> |</pre>
+#+REVEAL_HTML:<pre>code (A1)|   +--+-----------+--+<b>   ----\-----></b>|Decode (A2)|   <b>+----------+</b> |</pre>
+#+REVEAL_HTML:<pre>Context  |   +--+-----------+--+<b>  /     \     </b>|  Context  |   +----------+ |</pre>
+#+REVEAL_HTML:<pre>         |   | Encoded Request |<b>-/       \    </b>|           |   |Bad Req   | |</pre>
+#+REVEAL_HTML:<pre>         |-->|   Headers #3    |<b>          ---></b>|           |-->|Headers #2| |</pre>
+#+BEGIN_SRC
+         |   +--+-----------+--+              |           |   +----------+ |
+         |   +--+-----------+--+              |           |   +----------+ |
+         |   | Encoded Request |              |           |   |Plain Req | |
+         |-->|   Headers #4    |------------->|           |-->|Headers #4| |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+                |           |                                              |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+code (B2)|   |Encoded Response |              |Encode (B1)|   |Plain Resp| |
+Context  |<--|     Headers     |<-------------|  Context  |<--| Headers  | |
+---------+   +--+-----------+--+              +-----------+   +----------+ |
+----------------+           +----------------------------------------------+
+#+END_SRC
+
 * How HPACK Packs
 
 ** Data Types
@@ -434,33 +475,100 @@ since we already sent it. Then we can only send 7 bits per byte to honor the
 continuation bit. so send the 7 least significant bits, shift right, repeat.
 #+END_NOTES
 
-** hpack_integer
+** 1306
+#+BEGIN_SRC
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 1 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |
+| 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
++---+---+---+---+---+---+---+---+
+#+END_SRC
+#+BEGIN_NOTES
+N doesn't matter any more. We've got 7 bits, so put the least significant 7 in
+the first byte (26). Since we've got more to encode, flip the first bit to 1,
+and move on.
+#+END_NOTES
+
+** 10
+#+BEGIN_SRC
+  0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
++---+---+---+---+---+---+---+---+
+#+END_SRC
+#+BEGIN_NOTES
+Now that we bitshifted 7, what's left is 10. Send it over, without the first bit
+set, letting hpack know we're done with this integer
+#+END_NOTES
+
+** hpack_integer:encode(1337, 5)
 #+BEGIN_SRC erlang
-encode(Int, Prefix) when Int < (1 bsl Prefix - 1) ->
-    <<Int:Prefix>>;
-encode(Int, Prefix) ->
-    PrefixMask = 1 bsl Prefix - 1,
-    Remaining = Int - PrefixMask,
+encode(Int, N) when Int < (1 bsl N - 1) ->
+    <<Int:N>>;
+encode(Int, N) ->
+    Prefix = 1 bsl N - 1,
+    Remaining = Int - Prefix,
     Bin = encode_(Remaining, <<>>),
-    <<PrefixMask:Prefix, Bin/binary>>.
+    <<Prefix:N, Bin/binary>>.
 #+END_SRC
 
-** hpack_integer (cont)
+#+BEGIN_NOTES
+This is all about figuring out how many bits we have to work with (N), and if 2^N-1 is < the number we're encoding (clause 1) or >= (clause 2)
+#+END_NOTES
+
+** <
+#+BEGIN_SRC erlang
+encode(Int, N) when Int < (1 bsl N - 1) ->
+    <<Int:N>>;
+#+END_SRC
+#+BEGIN_NOTES
+If it's smaller, we just fit it in N bits and call it a day
+#+END_NOTES
+
+** >=
+#+BEGIN_SRC erlang
+encode(Int, N) ->
+    Prefix = 1 bsl N - 1, %% (2^N)-1
+    Remaining = Int - Prefix,
+    Bin = encode_(Remaining, <<>>),
+    <<Prefix:N, Bin/binary>>.
+#+END_SRC
+#+BEGIN_NOTES
+If it's >=, we subtract 2^N-1, and encode the remaining Int
+#+END_NOTES
+
+** hpack_integer
 #+BEGIN_SRC erlang
 -spec encode_(non_neg_integer(), binary()) -> binary().
 encode_(0, BinAcc) ->
     BinAcc;
 encode_(I, BinAcc) ->
-    Rem = I bsr 7,
-    This = (I rem 128),
-    ThisByte = case Rem =:= 0 of
-        true ->
-            This;
+    LeastSigSeven = (I rem 128),
+    RestToEncode = I bsr 7,
+    ThisByte = case RestToEncode of
+        0 ->
+            LeastSigSeven;
         _ -> %% Adds the continuation bit
-            128 + This
+            128 + LeastSigSeven
     end,
-    encode_(Rem, <<BinAcc/binary, ThisByte>>).
+    encode_(RestToEncode, <<BinAcc/binary, ThisByte>>).
 #+END_SRC
+
+** call stack
+#+BEGIN_SRC erlang
+EncInt = hpack:encode(1337, 5) ->
+  <<2#11111:5, hpack:encode_(1306, <<>>)>>.
+hpack:_encode(1306, <<>>) ->
+  hpack:_encode(10, <<2#10011010>>).
+hpack:encode_(10, <<2#10011010>>) ->
+  <<2#10011010,2#00001010>>.
+
+EncInt = <<2#11111:5,2#10011010,2#00001010>>.
+#+END_SRC
+
+#+BEGIN_NOTES
+Then you just add this to whatever incomplete byte you were working with and it's an even binary again.
+#+END_NOTES
 
 ** Livin' on the edge: 31, N=5
 #+BEGIN_SRC
@@ -652,7 +760,7 @@ Headers2 = [
 ],
 #+END_SRC
 
-** Wiresharked R2</h4>
+** Wiresharked R2
 #+BEGIN_SRC
 Header: :path: /some_file.html
     Representation: Literal Header Field with Incremental Indexing - Indexed Name
