@@ -12,6 +12,7 @@
 * HPACK in Erlang
 #+REVEAL_HTML: <h3>HTTP/2 Header Encoding</h3>
 #+REVEAL_HTML: <p><small>Joe DeVivo / <a href="http://twitter.com/joedevivo">@joedevivo</a></small></p>
+[[https://github.com/joedevivo/hpack][hpack]]
 
 * HTTP/2
 #+BEGIN_NOTES
