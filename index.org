@@ -169,9 +169,70 @@ Remember frame size? This block might be bigger than that
 #+END_SRC
 
 ** Send them over the wire
+#+BEGIN_SRC
++------------+
+|  HEADERS   |
++------------+
+|    NONE    |
++------------+
+|Fragment #1 |
+|            |
++------------+
+#+END_SRC
+
+** Send them over the wire
+#+BEGIN_SRC
++------------+
+|CONTINUATION|
++------------+
+|    NONE    |
++------------+
+|Fragment #2 |
+|            |
++------------+
+#+END_SRC
+
+** Send them over the wire
+#+BEGIN_SRC
++------------+
+|CONTINUATION|
++------------+
+|END_HEADERS |
++------------+
+|Fragment #3 |
+|            |
++------------+
+#+END_SRC
 
 ** Reconstruct the Encoded Header Block
-TODO: ASCII
+#+BEGIN_SRC
++------------+   +------------+   +------------+
+|  HEADERS   |   |CONTINUATION|   |CONTINUATION|
++------------+   +------------+   +------------+
+|    NONE    |   |    NONE    |   |END_HEADERS |
++------------+   +------------+   +------------+
+|Fragment #1 |   |Fragment #2 |   |Fragment #3 |
+|            |   |            |   |            |
++------------+   +------------+   +------------+
+#+END_SRC
+
+** Reconstruct the Encoded Header Block
+#+BEGIN_SRC
++--------+ +--------+ +--------+
+|Fragment| |Fragment| |Fragment|
+|   #1   | |   #2   | |   #3   |
+|        | |        | |        |
++--------+ +--------+ +--------+
+#+END_SRC
+
+** Reconstruct the Encoded Header Block
+#+BEGIN_SRC
+		+--------------------------+
+		|                          |
+		|   Encoded Header Block   |
+		|                          |
+		+--------------------------+
+#+END_SRC
 
 ** HPACK Decode
 #+BEGIN_SRC erlang
@@ -834,10 +895,10 @@ Header: x-custom-header: new value
 ]
 #+END_SRC
 
-   - "x-custom-header"/"new value" is the new 62</li>
-   - ":path"/"/some_file.html" is +1'd to 63</li>
-   - "x-custom-header"/"some custom value" is +1'd 64</li>
-   - "user-agent"/"my cool browser" is +1'd to 65</li>
+   - "x-custom-header"/"new value" is the new 62
+   - ":path"/"/some_file.html" is +1'd to 63
+   - "x-custom-header"/"some custom value" is +1'd 64
+   - "user-agent"/"my cool browser" is +1'd to 65
 #+BEGIN_NOTES
 when the sum of the sizes of name/value pairs exceedes the maximum table size,
 that last header falls off the end. bye!

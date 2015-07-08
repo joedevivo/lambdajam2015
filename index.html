@@ -307,17 +307,84 @@ Remember frame size? This block might be bigger than that
 </section>
 <section id="slide-sec-9-6">
 <h3 id="sec-9-6">Send them over the wire</h3>
+<pre  class="example">
++------------+
+|  HEADERS   |
++------------+
+|    NONE    |
++------------+
+|Fragment #1 |
+|            |
++------------+
+</pre>
 
 </section>
 <section id="slide-sec-9-7">
-<h3 id="sec-9-7">Reconstruct the Encoded Header Block</h3>
-<p>
-TODO: ASCII
-</p>
+<h3 id="sec-9-7">Send them over the wire</h3>
+<pre  class="example">
++------------+
+|CONTINUATION|
++------------+
+|    NONE    |
++------------+
+|Fragment #2 |
+|            |
++------------+
+</pre>
 
 </section>
 <section id="slide-sec-9-8">
-<h3 id="sec-9-8">HPACK Decode</h3>
+<h3 id="sec-9-8">Send them over the wire</h3>
+<pre  class="example">
++------------+
+|CONTINUATION|
++------------+
+|END_HEADERS |
++------------+
+|Fragment #3 |
+|            |
++------------+
+</pre>
+
+</section>
+<section id="slide-sec-9-9">
+<h3 id="sec-9-9">Reconstruct the Encoded Header Block</h3>
+<pre  class="example">
++------------+   +------------+   +------------+
+|  HEADERS   |   |CONTINUATION|   |CONTINUATION|
++------------+   +------------+   +------------+
+|    NONE    |   |    NONE    |   |END_HEADERS |
++------------+   +------------+   +------------+
+|Fragment #1 |   |Fragment #2 |   |Fragment #3 |
+|            |   |            |   |            |
++------------+   +------------+   +------------+
+</pre>
+
+</section>
+<section id="slide-sec-9-10">
+<h3 id="sec-9-10">Reconstruct the Encoded Header Block</h3>
+<pre  class="example">
++--------+ +--------+ +--------+
+|Fragment| |Fragment| |Fragment|
+|   #1   | |   #2   | |   #3   |
+|        | |        | |        |
++--------+ +--------+ +--------+
+</pre>
+
+</section>
+<section id="slide-sec-9-11">
+<h3 id="sec-9-11">Reconstruct the Encoded Header Block</h3>
+<pre  class="example">
++--------------------------+
+|                          |
+|   Encoded Header Block   |
+|                          |
++--------------------------+
+</pre>
+
+</section>
+<section id="slide-sec-9-12">
+<h3 id="sec-9-12">HPACK Decode</h3>
 <div class="org-src-container">
 
 <pre  class="src src-erlang"><span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">decode</span>(<span style="color: #eab700;">BinaryHeaderBlock</span>, <span style="color: #eab700;">Context</span>).
@@ -325,8 +392,8 @@ TODO: ASCII
 </div>
 
 </section>
-<section id="slide-sec-9-9">
-<h3 id="sec-9-9">It's a header list again!</h3>
+<section id="slide-sec-9-13">
+<h3 id="sec-9-13">It's a header list again!</h3>
 
 </section>
 </section>
@@ -1238,10 +1305,10 @@ Header: x-custom-header: new value
 </div>
 
 <ul>
-<li>"x-custom-header"/"new value" is the new 62&lt;/li&gt;</li>
-<li>":path"/"/some_file.html" is +1'd to 63&lt;/li&gt;</li>
-<li>"x-custom-header"/"some custom value" is +1'd 64&lt;/li&gt;</li>
-<li>"user-agent"/"my cool browser" is +1'd to 65&lt;/li&gt;</li>
+<li>"x-custom-header"/"new value" is the new 62</li>
+<li>":path"/"/some_file.html" is +1'd to 63</li>
+<li>"x-custom-header"/"some custom value" is +1'd 64</li>
+<li>"user-agent"/"my cool browser" is +1'd to 65</li>
 
 </ul>
 <aside class="notes">
