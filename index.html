@@ -27,10 +27,14 @@
 <section>
 <section id="slide-sec-1">
 <h2 id="sec-1">HPACK in Erlang</h2>
-<h3>HTTP/2 Header Encoding</h3>
+<h4>HTTP/2 Header Encoding</h4>
 <p><small>Joe DeVivo / <a href="http://twitter.com/joedevivo">@joedevivo</a></small></p>
 <p>
 <a href="https://github.com/joedevivo/hpack">hpack</a>
+</p>
+
+<p>
+<a href="http://joedevivo.com/lambdajam2015">joedevivo.com/lambdajam2015</a>
 </p>
 
 </section>
@@ -145,7 +149,15 @@ Frames are binary chunks with a 9 octet header.
 
 </section>
 <section id="slide-sec-6-6">
-<h3 id="sec-6-6">Frames</h3>
+<h3 id="sec-6-6">Jargon Watch!</h3>
+<p>
+A <b>connection</b> has multiple <b>streams</b> each of which can accept a single <b>request message</b>,
+and send a single <b>response message</b>, each message consisting of multiple <b>frames</b> in order
+</p>
+
+</section>
+<section id="slide-sec-6-7">
+<h3 id="sec-6-7">Frames</h3>
 <p>
 What you need to know!
 </p>
@@ -162,8 +174,8 @@ They do other stuff too, but that's not important now
 </aside>
 
 </section>
-<section id="slide-sec-6-7">
-<h3 id="sec-6-7">Type (8)</h3>
+<section id="slide-sec-6-8">
+<h3 id="sec-6-8">Type (8)</h3>
 <h4>10 Types</h4>
 <ul>
 <li>HEADERS</li>
@@ -183,11 +195,15 @@ We're only talking about three today
 </aside>
 
 </section>
-<section id="slide-sec-6-8">
-<h3 id="sec-6-8">PUSH_PROMISE?!</h3>
+<section id="slide-sec-6-9">
+<h3 id="sec-6-9">PUSH_PROMISE?!</h3>
 <aside class="notes">
 <p>
 Push promises let us send multiple responses to a single request. Cool eh?
+</p>
+
+<p>
+Single request, yes, new streams for each promise
 </p>
 
 </aside>
@@ -227,7 +243,7 @@ HPACK is cheap. It wants to put as little on the wire as possible
 <section id="slide-sec-9-1">
 <h3 id="sec-9-1">HEADERS</h3>
 <pre  class="example">
-     Name          Value
+Name          Value
 +------------+---------------+
 |   :path    |       /       |
 +------------+---------------+
@@ -394,6 +410,20 @@ Remember frame size? This block might be bigger than that
 </section>
 <section id="slide-sec-9-13">
 <h3 id="sec-9-13">It's a header list again!</h3>
+<pre  class="example">
+Name          Value
++------------+---------------+
+|   :path    |       /       |
++------------+---------------+
+| user-agent |      IE6      |
++------------+---------------+
+|  :method   |     POST      |
++------------+---------------+
+|   accept   |  text/plain   |
++------------+---------------+
+|   cookie   |      ...      |
++------------+---------------+
+</pre>
 
 </section>
 </section>
@@ -413,6 +443,13 @@ Stateless protocols are repetitive
 <span class="fragment (appear)"><p>
 Stateless protocols are repetitive
 </p></span>
+
+<aside class="notes">
+<p>
+Stateless protocols make it hard to share global information
+</p>
+
+</aside>
 
 </section>
 <section id="slide-sec-10-2">
@@ -456,7 +493,7 @@ Lookup table for common and recently used headers
 | 14    | :status            | 500           |
 | 15    | accept-charset     |               |
 | 16    | accept-encoding    | gzip, deflate |
-	            ...
+                    ...
 | 57    | transfer-encoding  |               |
 | 58    | user-agent         |               |
 | 59    | vary               |               |
@@ -464,6 +501,17 @@ Lookup table for common and recently used headers
 | 61    | www-authenticate   |               |
 +-------+--------------------+---------------+
 </pre>
+
+<aside class="notes">
+<p>
+These are for really common headers. e.g. A response code of 200 is
+just going to be represented by "8".  Sometimes there's no value, but
+the header name is what we're saving here, so 15+value is always
+"accept-charset", Indexes 1-61, Sometimes value, sometimes
+not. They're all hardcoded and are constant.
+</p>
+
+</aside>
 
 </section>
 <section id="slide-sec-11-1">
@@ -491,17 +539,6 @@ Lookup table for common and recently used headers
 </pre>
 </div>
 
-<aside class="notes">
-<p>
-These are for really common headers. e.g. A response code of 200 is
-just going to be represented by "8".  Sometimes there's no value, but
-the header name is what we're saving here, so 15+value is always
-"accept-charset", Indexes 1-61, Sometimes value, sometimes
-not. They're all hardcoded and are constant.
-</p>
-
-</aside>
-
 </section>
 </section>
 <section>
@@ -517,7 +554,13 @@ not. They're all hardcoded and are constant.
 <h2 id="sec-13">The Dynamic Table</h2>
 <p>
 Add your own!
+</p>
+
+<p>
 Indexes 62+
+</p>
+
+<p>
 Bounded by size in the HTTP/2 Connection Settings
 </p>
 
@@ -631,10 +674,10 @@ only shows the end result
 Given two peers: X &amp; Y, connected over C
 </p>
 <ul>
-<li>Context A1: encoding outbound requests on X to Y over C</li>
-<li>Context A2: decoding inbound requests on Y from X over C</li>
-<li>Context B1: encoding outbound responses on Y to X over C</li>
-<li>Context B2: decoding inbound responses on X from Y over C</li>
+<li>A1: encoding outbound requests on X to Y over C</li>
+<li>A2: decoding inbound requests on Y from X over C</li>
+<li>B1: encoding outbound responses on Y to X over C</li>
+<li>B2: decoding inbound responses on X from Y over C</li>
 
 </ul>
 
@@ -651,8 +694,9 @@ multiplex :D
 </section>
 <section id="slide-sec-14-2">
 <h3 id="sec-14-2">The Basic Case</h3>
-<pre  class="example">
-                    +---------------+           +---------------+
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">                    +---------------+           +---------------+
                     |Peer X (Client)|           |Peer Y (Server)|
 +-------------------+---------------+           +---------------+-------------------+
 |                                   |           |                                   |
@@ -669,12 +713,14 @@ multiplex :D
 |                                   |           |                                   |
 +-----------------------------------+           +-----------------------------------+
 </pre>
+</div>
 
 </section>
 <section id="slide-sec-14-3">
 <h3 id="sec-14-3">A More Interesting Case</h3>
-<pre  class="example">
-                   +---------------+           +---------------+
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">                    +---------------+           +---------------+
                     |Peer X (Client)|           |Peer Y (Server)|
 +-------------------+---------------+           +---------------+-------------------+
 |                                   |           |                                   |
@@ -696,12 +742,14 @@ multiplex :D
 | +----------+   +-----------+   +--+-----------+--+   +-----------+   +----------+ |
 +-----------------------------------+           +-----------------------------------+
 </pre>
+</div>
 
 </section>
 <section id="slide-sec-14-4">
 <h3 id="sec-14-4">Order Matters!</h3>
-<pre  class="example">
-+---------------+           +---------------+
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">+---------------+           +---------------+
 |Peer X (Client)|           |Peer Y (Server)|
 +---------------+           +---------------+------------------------------+
                 |           |                                              |
@@ -710,6 +758,7 @@ multiplex :D
          |--&gt;|   Headers #1    |-------------&gt;|           |--&gt;|Headers #1| |
          |   +--+-----------+--+              |           |   +----------+ |
 </pre>
+</div>
 <pre>         |   +--+-----------+--+              |           |   <b>+----------+</b> |</pre>
 <pre>         |   | Encoded Request |              |           |   <b>| Bad Req  |</b> |</pre>
 <pre>         |-->|   Headers #2    |<b>------\       </b>|           |--><b>|Headers #3|</b> |</pre>
@@ -717,8 +766,9 @@ multiplex :D
 <pre>Context  |   +--+-----------+--+<b>  /     \     </b>|  Context  |   +----------+ |</pre>
 <pre>         |   | Encoded Request |<b>-/       \    </b>|           |   |Bad Req   | |</pre>
 <pre>         |-->|   Headers #3    |<b>          ---></b>|           |-->|Headers #2| |</pre>
-<pre  class="example">
-         |   +--+-----------+--+              |           |   +----------+ |
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">         |   +--+-----------+--+              |           |   +----------+ |
          |   +--+-----------+--+              |           |   +----------+ |
          |   | Encoded Request |              |           |   |Plain Req | |
          |--&gt;|   Headers #4    |-------------&gt;|           |--&gt;|Headers #4| |
@@ -730,6 +780,7 @@ Context  |&lt;--|     Headers     |&lt;-------------|  Context  |&lt;--| Headers
 ---------+   +--+-----------+--+              +-----------+   +----------+ |
 ----------------+           +----------------------------------------------+
 </pre>
+</div>
 
 </section>
 </section>
@@ -750,7 +801,7 @@ Context  |&lt;--|     Headers     |&lt;-------------|  Context  |&lt;--| Headers
 <section id="slide-sec-15-2">
 <h3 id="sec-15-2">Indexed Header Field</h3>
 <pre  class="example">
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 1 |        Index (7+)         |
 +---+---------------------------+
@@ -775,7 +826,7 @@ This is the easiest one! It says that everything you need is in the context, at 
 <section id="slide-sec-15-4">
 <h3 id="sec-15-4">Integer Representation (N=5)</h3>
 <pre  class="example">
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | ? | ? | ? | 1   1   1   1   1 |
 +---+---+---+-------------------+
@@ -786,27 +837,26 @@ This is the easiest one! It says that everything you need is in the context, at 
 | 0 |    Value-(2^N-1) MSB      |
 +---+---------------------------+
 </pre>
-<aside class="notes">
-nil
-</aside>
 
 </section>
 <section id="slide-sec-15-5">
 <h3 id="sec-15-5">1337, N=5</h3>
-<pre  class="example">
-  0   1   2   3   4   5   6   7
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">  0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 1306
 | 1 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |  1306&gt;=128, encode(154), I=1306/128
 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |  10&lt;128, encode(10), done
 +---+---+---+---+---+---+---+---+
 </pre>
+</div>
 <aside class="notes">
 <p>
-Since we're sending something bigger than 31, we need to use more bytes, but
-let's not waste those 5 bits, take the number we're encoding, and subtract 31
-since we already sent it. Then we can only send 7 bits per byte to honor the
-continuation bit. so send the 7 least significant bits, shift right, repeat.
+Can't waste those 5 bits,
+Second line is 1337-2<sup>N</sup>-1 (31)
+then seven bits per byte for continuation bit.
+bsr 7
 </p>
 
 </aside>
@@ -815,7 +865,7 @@ continuation bit. so send the 7 least significant bits, shift right, repeat.
 <section id="slide-sec-15-6">
 <h3 id="sec-15-6">1306</h3>
 <pre  class="example">
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 1 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |
 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
@@ -834,7 +884,7 @@ and move on.
 <section id="slide-sec-15-7">
 <h3 id="sec-15-7">10</h3>
 <pre  class="example">
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
 +---+---+---+---+---+---+---+---+
@@ -864,7 +914,8 @@ set, letting hpack know we're done with this integer
 
 <aside class="notes">
 <p>
-This is all about figuring out how many bits we have to work with (N), and if 2<sup>N</sup>-1 is &lt; the number we're encoding (clause 1) or &gt;= (clause 2)
+<b>clauses follow</b> how many bits do we have to work with? (N), and if
+2<sup>N</sup>-1 is &lt; the number we're encoding (clause 1) or &gt;= (clause 2)
 </p>
 
 </aside>
@@ -910,18 +961,16 @@ If it's &gt;=, we subtract 2<sup>N</sup>-1, and encode the remaining Int
 <div class="org-src-container">
 
 <pre  class="src src-erlang"><span style="color: #8959a8;">-spec</span> <span style="color: #4271ae;">encode_</span>(<span style="color: #8959a8;">non_neg_integer</span>(), <span style="color: #8959a8;">binary</span>()) -&gt;<span style="color: #f5871f;"> </span><span style="color: #8959a8;">binary</span>().
-<span style="color: #f5871f;">encode_</span>(0, <span style="color: #eab700;">BinAcc</span>) -&gt;
-    <span style="color: #eab700;">BinAcc</span>;
 <span style="color: #f5871f;">encode_</span>(<span style="color: #eab700;">I</span>, <span style="color: #eab700;">BinAcc</span>) -&gt;
     <span style="color: #eab700;">LeastSigSeven</span> = (<span style="color: #eab700;">I</span> <span style="color: #8959a8;">rem</span> 128),
     <span style="color: #eab700;">RestToEncode</span> = <span style="color: #eab700;">I</span> <span style="color: #8959a8;">bsr</span> 7,
-    <span style="color: #eab700;">ThisByte</span> = <span style="color: #718c00;">case</span> <span style="color: #eab700;">RestToEncode</span> <span style="color: #718c00;">of</span>
+    <span style="color: #718c00;">case</span> <span style="color: #eab700;">RestToEncode</span> <span style="color: #718c00;">of</span>
         0 -&gt;
-            <span style="color: #eab700;">LeastSigSeven</span>;
+            &lt;&lt;<span style="color: #eab700;">BinAcc</span>/binary, <span style="color: #eab700;">LeastSigSeven</span>&gt;&gt;;
         <span style="color: #eab700;">_</span> -&gt;<span style="color: #f5871f;"> </span><span style="color: #8e908c; font-style: italic;">%% </span><span style="color: #8e908c; font-style: italic;">Adds the continuation bit</span>
-            128 + <span style="color: #eab700;">LeastSigSeven</span>
-    <span style="color: #718c00;">end</span>,
-    <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">RestToEncode</span>, &lt;&lt;<span style="color: #eab700;">BinAcc</span>/binary, <span style="color: #eab700;">ThisByte</span>&gt;&gt;).
+            <span style="color: #eab700;">ThisByte</span> = 2#10000000 <span style="color: #8959a8;">bor</span> <span style="color: #eab700;">LeastSigSeven</span>,
+            <span style="color: #4271ae;">encode_</span>(<span style="color: #eab700;">RestToEncode</span>, &lt;&lt;<span style="color: #eab700;">BinAcc</span>/binary, <span style="color: #eab700;">ThisByte</span>&gt;&gt;)
+    <span style="color: #718c00;">end</span>.
 </pre>
 </div>
 
@@ -930,11 +979,11 @@ If it's &gt;=, we subtract 2<sup>N</sup>-1, and encode the remaining Int
 <h3 id="sec-15-12">call stack</h3>
 <div class="org-src-container">
 
-<pre  class="src src-erlang">EncInt = <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode</span>(1337, 5) -&gt;
-  &lt;&lt;2#11111:5, <span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode_</span>(1306, &lt;&lt;&gt;&gt;)&gt;&gt;.
-hpack:<span style="color: #eab700;">_encode</span>(1306, &lt;&lt;&gt;&gt;) -&gt;
-  hpack:<span style="color: #eab700;">_encode</span>(10, &lt;&lt;2#10011010&gt;&gt;).
-<span style="color: #4271ae;">hpack</span>:<span style="color: #4271ae;">encode_</span>(10, &lt;&lt;2#10011010&gt;&gt;) -&gt;
+<pre  class="src src-erlang">EncInt = <span style="color: #4271ae;">hpack_integer</span>:<span style="color: #4271ae;">encode</span>(1337, 5) -&gt;
+  &lt;&lt;2#11111:5, <span style="color: #4271ae;">hpack_integer</span>:<span style="color: #4271ae;">encode_</span>(1306, &lt;&lt;&gt;&gt;)&gt;&gt;.
+<span style="color: #4271ae;">hpack_integer</span>:<span style="color: #4271ae;">encode_</span>(1306, &lt;&lt;&gt;&gt;) -&gt;
+  <span style="color: #4271ae;">hpack_integer</span>:<span style="color: #4271ae;">encode_</span>(10, &lt;&lt;2#10011010&gt;&gt;).
+<span style="color: #4271ae;">hpack_integer</span>:<span style="color: #4271ae;">encode_</span>(10, &lt;&lt;2#10011010&gt;&gt;) -&gt;
   &lt;&lt;2#10011010,2#00001010&gt;&gt;.
 
 <span style="color: #eab700;">EncInt</span> = &lt;&lt;2#11111:5,2#10011010,2#00001010&gt;&gt;.
@@ -951,13 +1000,15 @@ Then you just add this to whatever incomplete byte you were working with and it'
 </section>
 <section id="slide-sec-15-13">
 <h3 id="sec-15-13">Livin' on the edge: 31, N=5</h3>
-<pre  class="example">
-  0   1   2   3   4   5   6   7
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">  0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 0
 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |  0&lt;128, encode(0), done
 +---+---+---+---+---+---+---+---+
 </pre>
+</div>
 <aside class="notes">
 <p>
 In this one case, where the number you're encoding is 2<sup>N</sup>-1, you have to send a
@@ -974,7 +1025,7 @@ I only found this because Wireshark
 <section id="slide-sec-15-14">
 <h3 id="sec-15-14">Literal Header Field w/ Index</h3>
 <pre  class="example">
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 0 | 1 |      Index (6+)       |
 +---+---+-----------------------+
@@ -1035,7 +1086,7 @@ Created from statistical analysis of web traffic
 <section id="slide-sec-15-17">
 <h3 id="sec-15-17">Literal Header Field non-Indexed</h3>
 <pre  class="example">
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 0 | 1 |           0           |
 +---+---+-----------------------+
@@ -1149,21 +1200,27 @@ something that knows how to read those bytes
 </section>
 <section id="slide-sec-16-3">
 <h3 id="sec-16-3">Wiresharked R1</h3>
-<pre  class="example">
-Header: :path: /
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: :path: /
     Representation: Indexed Header Field
 </pre>
+</div>
 <pre>    Index: <b>4</b></pre>
-<pre  class="example">
-Header: user-agent: my cool browser
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: user-agent: my cool browser
     Representation: Literal Header Field with Incremental Indexing - Indexed Name
 </pre>
+</div>
 <pre>    Index: <b>58</b></pre>
 <pre>    Value: <b>my cool browser</b></pre>
-<pre  class="example">
-Header: x-custom-header: some custom value
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: x-custom-header: some custom value
     Representation: Literal Header Field with Incremental Indexing - New Name
 </pre>
+</div>
 <pre>    Name: <b>x-custom-header</b></pre>
 <pre>    Value: <b>some custom value</b></pre>
 <aside class="notes">
@@ -1208,21 +1265,27 @@ Look at the first and second headers' index, and the third has none
 </section>
 <section id="slide-sec-16-6">
 <h3 id="sec-16-6">Wiresharked R2</h3>
-<pre  class="example">
-Header: :path: /some_file.html
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: :path: /some_file.html
     Representation: Literal Header Field with Incremental Indexing - Indexed Name
 </pre>
+</div>
 <pre>    Index: <b>4</b></pre>
 <pre>    Value: <b>/some_file.html</b></pre>
-<pre  class="example">
-Header: user-agent: my cool browser
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: user-agent: my cool browser
     Representation: Indexed Header Field
 </pre>
+</div>
 <pre>    Index: <b>64</b></pre>
-<pre  class="example">
-Header: x-custom-header: some custom value
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: x-custom-header: some custom value
     Representation: Indexed Header Field
 </pre>
+</div>
 <pre>    Index: <b>63</b></pre>
 <aside class="notes">
 <p>
@@ -1273,20 +1336,26 @@ FIFO queue. First in, First out. Falls of the end.
 </section>
 <section id="slide-sec-16-9">
 <h3 id="sec-16-9">Wiresharked R3</h3>
-<pre  class="example">
-Header: :path: /some_file.html
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: :path: /some_file.html
     Representation: Indexed Header Field
 </pre>
+</div>
 <pre>    Index: <b>62</b></pre>
-<pre  class="example">
-Header: user-agent: my cool browser
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: user-agent: my cool browser
     Representation: Indexed Header Field
 </pre>
+</div>
 <pre>    Index: <b>64</b></pre>
-<pre  class="example">
-Header: x-custom-header: new value
+<div class="org-src-container">
+
+<pre  class="src src-plaintext">Header: x-custom-header: new value
     Representation: Literal Header Field with Incremental Indexing - Indexed Name
 </pre>
+</div>
 <pre>    Index: <b>63</b></pre>
 <pre>    Value: <b>new value</b></pre>
 
@@ -1318,6 +1387,15 @@ that last header falls off the end. bye!
 </p>
 
 </aside>
+
+</section>
+</section>
+<section>
+<section id="slide-sec-17">
+<h2 id="sec-17">Thanks!</h2>
+<p>
+<a href="https://github.com/joedevivo/hpack">github.com/joedevivo/hpack</a>
+</p>
 </section>
 </section>
 </div>

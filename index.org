@@ -11,9 +11,11 @@
 #+OPTIONS: reveal_history:t
 
 * HPACK in Erlang
-#+REVEAL_HTML: <h3>HTTP/2 Header Encoding</h3>
+#+REVEAL_HTML: <h4>HTTP/2 Header Encoding</h4>
 #+REVEAL_HTML: <p><small>Joe DeVivo / <a href="http://twitter.com/joedevivo">@joedevivo</a></small></p>
 [[https://github.com/joedevivo/hpack][hpack]]
+
+[[http://joedevivo.com/lambdajam2015][joedevivo.com/lambdajam2015]]
 
 * HTTP/2
 #+BEGIN_NOTES
@@ -72,6 +74,10 @@ Unlike all plaintext HTTP before it
 Frames are binary chunks with a 9 octet header.
 #+END_NOTES
 
+** Jargon Watch!
+A *connection* has multiple *streams* each of which can accept a single *request message*,
+and send a single *response message*, each message consisting of multiple *frames* in order
+
 ** Frames
    What you need to know!
    - There's a maximum length
@@ -94,6 +100,8 @@ We're only talking about three today
 ** PUSH_PROMISE?!
 #+BEGIN_NOTES
 Push promises let us send multiple responses to a single request. Cool eh?
+
+Single request, yes, new streams for each promise
 #+END_NOTES
 
 * Phew!
@@ -110,18 +118,18 @@ HPACK is cheap. It wants to put as little on the wire as possible
 
 ** HEADERS
 #+BEGIN_SRC
-			     Name          Value
-			+------------+---------------+
-			|   :path    |       /       |
-			+------------+---------------+
-			| user-agent |      IE6      |
-			+------------+---------------+
-			|  :method   |     POST      |
-			+------------+---------------+
-			|   accept   |  text/plain   |
-			+------------+---------------+
-			|   cookie   |      ...      |
-			+------------+---------------+
+Name          Value
++------------+---------------+
+|   :path    |       /       |
++------------+---------------+
+| user-agent |      IE6      |
++------------+---------------+
+|  :method   |     POST      |
++------------+---------------+
+|   accept   |  text/plain   |
++------------+---------------+
+|   cookie   |      ...      |
++------------+---------------+
 #+END_SRC
 #+BEGIN_NOTES
 Remember headers? talk about psuedo headers here
@@ -132,11 +140,11 @@ Remember headers? talk about psuedo headers here
 hpack:encode(Headers, Context).
 #+END_SRC
 #+BEGIN_SRC
-		+--------------------------+
-		|                          |
-		|   Encoded Header Block   |
-		|                          |
-		+--------------------------+
++--------------------------+
+|                          |
+|   Encoded Header Block   |
+|                          |
++--------------------------+
 #+END_SRC
 #+BEGIN_NOTES
 This is smaller than plaintext
@@ -227,11 +235,11 @@ Remember frame size? This block might be bigger than that
 
 ** Reconstruct the Encoded Header Block
 #+BEGIN_SRC
-		+--------------------------+
-		|                          |
-		|   Encoded Header Block   |
-		|                          |
-		+--------------------------+
++--------------------------+
+|                          |
+|   Encoded Header Block   |
+|                          |
++--------------------------+
 #+END_SRC
 
 ** HPACK Decode
@@ -240,6 +248,20 @@ hpack:decode(BinaryHeaderBlock, Context).
 #+END_SRC
 
 ** It's a header list again!
+#+BEGIN_SRC
+Name          Value
++------------+---------------+
+|   :path    |       /       |
++------------+---------------+
+| user-agent |      IE6      |
++------------+---------------+
+|  :method   |     POST      |
++------------+---------------+
+|   accept   |  text/plain   |
++------------+---------------+
+|   cookie   |      ...      |
++------------+---------------+
+#+END_SRC
 
 * How it does it
 
@@ -249,6 +271,10 @@ HTTP is stateless
 Stateless protocols are repetitive
 #+ATTR_REVEAL: :frag (appear)
 Stateless protocols are repetitive
+
+#+BEGIN_NOTES
+Stateless protocols make it hard to share global information
+#+END_NOTES
 
 ** Compression Context is Stateful
 #+BEGIN_NOTES
@@ -263,50 +289,28 @@ Lookup table for common and recently used headers
 
 * The Static Table
 #+BEGIN_SRC
-	+-------+--------------------+---------------+
-	| Index | Header Name        | Header Value  |
-	+-------+--------------------+---------------+
-	| 1     | :authority         |               |
-	| 2     | :method            | GET           |
-	| 3     | :method            | POST          |
-	| 4     | :path              | /             |
-	| 5     | :path              | /index.html   |
-	| 6     | :scheme            | http          |
-	| 7     | :scheme            | https         |
-	| 8     | :status            | 200           |
-	| 13    | :status            | 404           |
-	| 14    | :status            | 500           |
-	| 15    | accept-charset     |               |
-	| 16    | accept-encoding    | gzip, deflate |
-	                    ...
-	| 57    | transfer-encoding  |               |
-	| 58    | user-agent         |               |
-	| 59    | vary               |               |
-	| 60    | via                |               |
-	| 61    | www-authenticate   |               |
-	+-------+--------------------+---------------+
-#+END_SRC
-
-** [[https://github.com/joedevivo/chatterbox/blob/euc2015/src/headers.erl#L62-L123][hpack_index.erl]]
-#+BEGIN_SRC erlang
-        [{1  , <<":authority">>       , undefined},
-         {2  , <<":method">>          , <<"GET">>},
-         {3  , <<":method">>          , <<"POST">>},
-         {4  , <<":path">>            , <<"/">>},
-         {5  , <<":path">>            , <<"/index.html">>},
-         {6  , <<":scheme">>          , <<"http">>},
-         {7  , <<":scheme">>          , <<"https">>},
-         {8  , <<":status">>          , <<"200">>},
-         {13 , <<":status">>          , <<"404">>},
-         {14 , <<":status">>          , <<"500">>},
-         {15 , <<"accept-charset">>   , undefined},
-         {16 , <<"accept-encoding">>  , <<"gzip, deflate">>},
-                      ...
-         {57 , <<"transfer-encoding">>, undefined},
-         {58 , <<"user-agent">>       , undefined},
-         {59 , <<"vary">>             , undefined},
-         {60 , <<"via">>              , undefined},
-         {61 , <<"www-authenticate">> , undefined}]
++-------+--------------------+---------------+
+| Index | Header Name        | Header Value  |
++-------+--------------------+---------------+
+| 1     | :authority         |               |
+| 2     | :method            | GET           |
+| 3     | :method            | POST          |
+| 4     | :path              | /             |
+| 5     | :path              | /index.html   |
+| 6     | :scheme            | http          |
+| 7     | :scheme            | https         |
+| 8     | :status            | 200           |
+| 13    | :status            | 404           |
+| 14    | :status            | 500           |
+| 15    | accept-charset     |               |
+| 16    | accept-encoding    | gzip, deflate |
+                    ...
+| 57    | transfer-encoding  |               |
+| 58    | user-agent         |               |
+| 59    | vary               |               |
+| 60    | via                |               |
+| 61    | www-authenticate   |               |
++-------+--------------------+---------------+
 #+END_SRC
 
 #+BEGIN_NOTES
@@ -317,13 +321,37 @@ the header name is what we're saving here, so 15+value is always
 not. They're all hardcoded and are constant.
 #+END_NOTES
 
+** [[https://github.com/joedevivo/chatterbox/blob/euc2015/src/headers.erl#L62-L123][hpack_index.erl]]
+#+BEGIN_SRC erlang
+[{1  , <<":authority">>       , undefined},
+ {2  , <<":method">>          , <<"GET">>},
+ {3  , <<":method">>          , <<"POST">>},
+ {4  , <<":path">>            , <<"/">>},
+ {5  , <<":path">>            , <<"/index.html">>},
+ {6  , <<":scheme">>          , <<"http">>},
+ {7  , <<":scheme">>          , <<"https">>},
+ {8  , <<":status">>          , <<"200">>},
+ {13 , <<":status">>          , <<"404">>},
+ {14 , <<":status">>          , <<"500">>},
+ {15 , <<"accept-charset">>   , undefined},
+ {16 , <<"accept-encoding">>  , <<"gzip, deflate">>},
+              ...
+ {57 , <<"transfer-encoding">>, undefined},
+ {58 , <<"user-agent">>       , undefined},
+ {59 , <<"vary">>             , undefined},
+ {60 , <<"via">>              , undefined},
+ {61 , <<"www-authenticate">> , undefined}]
+#+END_SRC
+
 * Initial Context
 #+REVEAL_HTML: <h2>IS</h2>
 #+REVEAL_HTML: <h2>the Static Table</h2>
 
 * The Dynamic Table
   Add your own!
+
   Indexes 62+
+
   Bounded by size in the HTTP/2 Connection Settings
 
 #+BEGIN_NOTES
@@ -392,11 +420,11 @@ only shows the end result
 * Where do they live?
 
 ** There Are Four Contexts!
-   Given two peers: X & Y, connected over C
-   - Context A1: encoding outbound requests on X to Y over C
-   - Context A2: decoding inbound requests on Y from X over C
-   - Context B1: encoding outbound responses on Y to X over C
-   - Context B2: decoding inbound responses on X from Y over C
+Given two peers: X & Y, connected over C
+- A1: encoding outbound requests on X to Y over C
+- A2: decoding inbound requests on Y from X over C
+- B1: encoding outbound responses on Y to X over C
+- B2: decoding inbound responses on X from Y over C
 
 #+BEGIN_NOTES
 Two for each peer, Maybe easier to think of as one for Requests and
@@ -406,7 +434,7 @@ multiplex :D
 #+END_NOTES
 
 ** The Basic Case
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
                     +---------------+           +---------------+
                     |Peer X (Client)|           |Peer Y (Server)|
 +-------------------+---------------+           +---------------+-------------------+
@@ -426,8 +454,8 @@ multiplex :D
 #+END_SRC
 
 ** A More Interesting Case
-#+BEGIN_SRC
-                   +---------------+           +---------------+
+#+BEGIN_SRC plaintext
+                    +---------------+           +---------------+
                     |Peer X (Client)|           |Peer Y (Server)|
 +-------------------+---------------+           +---------------+-------------------+
 |                                   |           |                                   |
@@ -451,7 +479,7 @@ multiplex :D
 #+END_SRC
 
 ** Order Matters!
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 +---------------+           +---------------+
 |Peer X (Client)|           |Peer Y (Server)|
 +---------------+           +---------------+------------------------------+
@@ -468,7 +496,7 @@ multiplex :D
 #+REVEAL_HTML:<pre>Context  |   +--+-----------+--+<b>  /     \     </b>|  Context  |   +----------+ |</pre>
 #+REVEAL_HTML:<pre>         |   | Encoded Request |<b>-/       \    </b>|           |   |Bad Req   | |</pre>
 #+REVEAL_HTML:<pre>         |-->|   Headers #3    |<b>          ---></b>|           |-->|Headers #2| |</pre>
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
          |   +--+-----------+--+              |           |   +----------+ |
          |   +--+-----------+--+              |           |   +----------+ |
          |   | Encoded Request |              |           |   |Plain Req | |
@@ -490,7 +518,7 @@ Context  |<--|     Headers     |<-------------|  Context  |<--| Headers  | |
 
 ** Indexed Header Field
 #+BEGIN_SRC
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 1 |        Index (7+)         |
 +---+---------------------------+
@@ -505,23 +533,20 @@ This is the easiest one! It says that everything you need is in the context, at 
 
 ** Integer Representation (N=5)
 #+BEGIN_SRC
-     0   1   2   3   4   5   6   7
-   +---+---+---+---+---+---+---+---+
-   | ? | ? | ? | 1   1   1   1   1 |
-   +---+---+---+-------------------+
-   | 1 |    Value-(2^N-1) LSB      |
-   +---+---------------------------+
-                  ...
-   +---+---------------------------+
-   | 0 |    Value-(2^N-1) MSB      |
-   +---+---------------------------+
+0   1   2   3   4   5   6   7
++---+---+---+---+---+---+---+---+
+| ? | ? | ? | 1   1   1   1   1 |
++---+---+---+-------------------+
+| 1 |    Value-(2^N-1) LSB      |
++---+---------------------------+
+               ...
++---+---------------------------+
+| 0 |    Value-(2^N-1) MSB      |
++---+---------------------------+
 #+END_SRC
-#+BEGIN_NOTES
-
-#+END_NOTES
 
 ** 1337, N=5
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
   0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 1306
@@ -530,15 +555,15 @@ This is the easiest one! It says that everything you need is in the context, at 
 +---+---+---+---+---+---+---+---+
 #+END_SRC
 #+BEGIN_NOTES
-Since we're sending something bigger than 31, we need to use more bytes, but
-let's not waste those 5 bits, take the number we're encoding, and subtract 31
-since we already sent it. Then we can only send 7 bits per byte to honor the
-continuation bit. so send the 7 least significant bits, shift right, repeat.
+Can't waste those 5 bits,
+Second line is 1337-2^N-1 (31)
+then seven bits per byte for continuation bit.
+bsr 7
 #+END_NOTES
 
 ** 1306
 #+BEGIN_SRC
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 1 | 0 | 0 | 1 | 1 | 0 | 1 | 0 |
 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
@@ -552,7 +577,7 @@ and move on.
 
 ** 10
 #+BEGIN_SRC
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 |
 +---+---+---+---+---+---+---+---+
@@ -574,7 +599,8 @@ encode(Int, N) ->
 #+END_SRC
 
 #+BEGIN_NOTES
-This is all about figuring out how many bits we have to work with (N), and if 2^N-1 is < the number we're encoding (clause 1) or >= (clause 2)
+*clauses follow* how many bits do we have to work with? (N), and if
+2^N-1 is < the number we're encoding (clause 1) or >= (clause 2)
 #+END_NOTES
 
 ** <
@@ -601,27 +627,25 @@ If it's >=, we subtract 2^N-1, and encode the remaining Int
 ** hpack_integer
 #+BEGIN_SRC erlang
 -spec encode_(non_neg_integer(), binary()) -> binary().
-encode_(0, BinAcc) ->
-    BinAcc;
 encode_(I, BinAcc) ->
     LeastSigSeven = (I rem 128),
     RestToEncode = I bsr 7,
-    ThisByte = case RestToEncode of
+    case RestToEncode of
         0 ->
-            LeastSigSeven;
+            <<BinAcc/binary, LeastSigSeven>>;
         _ -> %% Adds the continuation bit
-            128 + LeastSigSeven
-    end,
-    encode_(RestToEncode, <<BinAcc/binary, ThisByte>>).
+            ThisByte = 2#10000000 bor LeastSigSeven,
+            encode_(RestToEncode, <<BinAcc/binary, ThisByte>>)
+    end.
 #+END_SRC
 
 ** call stack
 #+BEGIN_SRC erlang
-EncInt = hpack:encode(1337, 5) ->
-  <<2#11111:5, hpack:encode_(1306, <<>>)>>.
-hpack:_encode(1306, <<>>) ->
-  hpack:_encode(10, <<2#10011010>>).
-hpack:encode_(10, <<2#10011010>>) ->
+EncInt = hpack_integer:encode(1337, 5) ->
+  <<2#11111:5, hpack_integer:encode_(1306, <<>>)>>.
+hpack_integer:encode_(1306, <<>>) ->
+  hpack_integer:encode_(10, <<2#10011010>>).
+hpack_integer:encode_(10, <<2#10011010>>) ->
   <<2#10011010,2#00001010>>.
 
 EncInt = <<2#11111:5,2#10011010,2#00001010>>.
@@ -632,7 +656,7 @@ Then you just add this to whatever incomplete byte you were working with and it'
 #+END_NOTES
 
 ** Livin' on the edge: 31, N=5
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
   0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | X | X | X | 1 | 1 | 1 | 1 | 1 |  Prefix = 31, I = 0
@@ -648,7 +672,7 @@ I only found this because Wireshark
 
 ** Literal Header Field w/ Index
 #+BEGIN_SRC
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 0 | 1 |      Index (6+)       |
 +---+---+-----------------------+
@@ -694,7 +718,7 @@ Created from statistical analysis of web traffic
 
 ** Literal Header Field non-Indexed
 #+BEGIN_SRC
-  0   1   2   3   4   5   6   7
+0   1   2   3   4   5   6   7
 +---+---+---+---+---+---+---+---+
 | 0 | 1 |           0           |
 +---+---+-----------------------+
@@ -779,18 +803,18 @@ Headers1 = [
 #+END_SRC
 
 ** Wiresharked R1
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 Header: :path: /
     Representation: Indexed Header Field
 #+END_SRC
 #+REVEAL_HTML:<pre>    Index: <b>4</b></pre>
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 Header: user-agent: my cool browser
     Representation: Literal Header Field with Incremental Indexing - Indexed Name
 #+END_SRC
 #+REVEAL_HTML:<pre>    Index: <b>58</b></pre>
 #+REVEAL_HTML:<pre>    Value: <b>my cool browser</b></pre>
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 Header: x-custom-header: some custom value
     Representation: Literal Header Field with Incremental Indexing - New Name
 #+END_SRC
@@ -822,18 +846,18 @@ Headers2 = [
 #+END_SRC
 
 ** Wiresharked R2
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 Header: :path: /some_file.html
     Representation: Literal Header Field with Incremental Indexing - Indexed Name
 #+END_SRC
 #+REVEAL_HTML:<pre>    Index: <b>4</b></pre>
 #+REVEAL_HTML:<pre>    Value: <b>/some_file.html</b></pre>
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
         Header: user-agent: my cool browser
             Representation: Indexed Header Field
 #+END_SRC
 #+REVEAL_HTML:<pre>    Index: <b>64</b></pre>
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
         Header: x-custom-header: some custom value
             Representation: Indexed Header Field
 #+END_SRC
@@ -868,17 +892,17 @@ Headers3 = [
 ],
 #+END_SRC
 ** Wiresharked R3
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 Header: :path: /some_file.html
     Representation: Indexed Header Field
 #+END_SRC
 #+REVEAL_HTML:<pre>    Index: <b>62</b></pre>
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 Header: user-agent: my cool browser
     Representation: Indexed Header Field
 #+END_SRC
 #+REVEAL_HTML:<pre>    Index: <b>64</b></pre>
-#+BEGIN_SRC
+#+BEGIN_SRC plaintext
 Header: x-custom-header: new value
     Representation: Literal Header Field with Incremental Indexing - Indexed Name
 #+END_SRC
@@ -903,3 +927,7 @@ Header: x-custom-header: new value
 when the sum of the sizes of name/value pairs exceedes the maximum table size,
 that last header falls off the end. bye!
 #+END_NOTES
+
+* Thanks!
+
+[[https://github.com/joedevivo/hpack][github.com/joedevivo/hpack]]

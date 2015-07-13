@@ -135,9 +135,11 @@ body {
   font-size: 0.55em;
   font-family: monospace;
   line-height: 1.2em;
-  word-wrap: break-word;}
-.reveal pre .center {
-  text-align: none;
+  word-wrap: break-word;
+}
+
+.reveal pre.example {
+  text-align: center !important;
 }
 
 .reveal code {
